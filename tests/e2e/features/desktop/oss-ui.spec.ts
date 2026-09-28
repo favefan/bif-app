@@ -48,6 +48,9 @@ const navigationGroups = new Set(["Alerting", "Guardrails", "Edge Control", "Ada
 
 async function capture(page: Page, testInfo: TestInfo, name: string) {
   const reminder = page.getByRole("button", { name: "Close for now", exact: true });
+  // This is the last UI action in each test. Detach the auto-handler before
+  // explicitly closing the checklist, or it can close the target of this click.
+  await page.removeLocatorHandler(reminder);
   if (await reminder.isVisible()) await reminder.click();
   await page.screenshot({ path: testInfo.outputPath(`${name}.png`), fullPage: true });
 }
