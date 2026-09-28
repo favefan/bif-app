@@ -15,7 +15,7 @@ This is not a new gateway or a second configuration system.
 ## Portable usage
 
 Download `bif-app-windows-x64-portable.zip` and `SHA256SUMS.txt` from the GitHub
-pre-release or the **Desktop Windows** Actions artifact. Extract the entire ZIP
+release or the **Desktop Windows** Actions artifact. Extract the entire ZIP
 to a writable local folder, then double-click **bif-app.exe**. Keep its sidecar
 with the application. This standard, smaller ZIP uses the Microsoft WebView2
 Evergreen runtime already installed on your PC. An optional
@@ -23,7 +23,7 @@ Evergreen runtime already installed on your PC. An optional
 machines; keep its `WebView2` folder together with the executables. No terminal,
 Docker, development tools, cloud account or separately installed Bifrost is
 needed. Windows 10/11 x86_64 only.
-The alpha is unsigned; no certificate or installer is required for this phase.
+The portable build is unsigned; no certificate or installer is required for this phase.
 
 Wait for startup to finish: the window opens the original Bifrost UI after
 `GET /health` returns HTTP 200. Provider credentials are configured in that UI.

@@ -1,6 +1,12 @@
 name: Desktop Windows
 on:
   workflow_dispatch:
+    inputs:
+      validation:
+        description: Full checks, or smoke only for a previously validated version-only promotion
+        type: choice
+        default: full
+        options: [full, release-smoke]
   push:
     branches: [main, 'feat/**', 'fix/**']
     paths: ['desktop/**', '.github/workflows/desktop-windows.yml', 'transports/**', 'core/**', 'framework/**', 'plugins/**', 'ui/**', 'tests/e2e/**']
@@ -51,20 +57,25 @@ jobs:
       - name: Build UI, gateway, Tauri and portable ZIP
         run: ./desktop/scripts/build.ps1 release
       - name: Install desktop UI E2E test dependencies
+        if: github.event_name != 'workflow_dispatch' || inputs.validation != 'release-smoke'
         run: npm ci --prefix tests/e2e --no-audit --no-fund
       - name: Verify ordinary and desktop UI presentations
+        if: github.event_name != 'workflow_dispatch' || inputs.validation != 'release-smoke'
         run: node desktop/scripts/oss-ui-smoke.mjs
       - name: Desktop unit and real gateway smoke tests
+        if: github.event_name != 'workflow_dispatch' || inputs.validation != 'release-smoke'
         run: ./desktop/scripts/build.ps1 test
       - name: Launch extracted portable desktop and verify ownership
         run: ./desktop/scripts/host-smoke.ps1
       - name: Exercise isolated Desktop Settings WebView
+        if: github.event_name != 'workflow_dispatch' || inputs.validation != 'release-smoke'
         run: |
           cargo build --locked --manifest-path desktop/src-tauri/Cargo.toml
           Copy-Item desktop/src-tauri/binaries/bifrost-http.exe desktop/src-tauri/target/debug/bifrost-http.exe -Force
           npm install --prefix desktop/.tools/qa --no-save --package-lock=false playwright@1.63.0
           node desktop/scripts/settings-smoke.cjs
       - name: Verify ordinary gateway still builds
+        if: github.event_name != 'workflow_dispatch' || inputs.validation != 'release-smoke'
         run: go build -o desktop/dist/bifrost-server-check.exe ./transports/bifrost-http
         env:
           CGO_ENABLED: '1'

@@ -1,7 +1,12 @@
-name: Publish Desktop Prerelease
+name: Publish Desktop Release
 on:
   workflow_dispatch:
     inputs:
+      channel:
+        description: Stable requires explicit user authorization; prerelease is the default
+        type: choice
+        default: prerelease
+        options: [prerelease, stable]
       run_id:
         description: Successful Desktop Windows run on main to publish
         required: true
@@ -22,12 +27,13 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
+      RELEASE_CHANNEL: ${{ inputs.channel }}
       SOURCE_RUN_ID: ${{ inputs.run_id }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Verify source, package and prerelease version
+      - name: Verify source, package and release version
         run: |
           $ErrorActionPreference = 'Stop'
           if ($env:SOURCE_RUN_ID -notmatch '^\d+$') { throw 'Expected numeric run ID' }
@@ -41,7 +47,11 @@ jobs:
           $config = git show "${source}:desktop/src-tauri/tauri.conf.json" | ConvertFrom-Json
           if ($LASTEXITCODE -ne 0) { throw 'Cannot read source version' }
           $version = $config.version
-          if ($version -notmatch '^\d+\.\d+\.\d+-(alpha|beta|rc)\.\d+$') { throw 'This workflow only publishes prereleases' }
+          if ($env:RELEASE_CHANNEL -eq 'stable') {
+            if ($version -notmatch '^\d+\.\d+\.\d+$') { throw 'Stable channel requires a stable version' }
+          } elseif ($env:RELEASE_CHANNEL -eq 'prerelease') {
+            if ($version -notmatch '^\d+\.\d+\.\d+-(alpha|beta|rc)\.\d+$') { throw 'Prerelease channel requires a prerelease version' }
+          } else { throw 'Unknown release channel' }
           $tag = "v$version"
           $notes = ".github/release-notes/$tag.md"
           if (-not (Test-Path -LiteralPath $notes)) { throw "Missing reviewed release notes: $notes" }
@@ -66,6 +76,7 @@ jobs:
       - name: Tag and publish verified portable assets
         run: |
           $ErrorActionPreference = 'Stop'
+          $channelArgs = if ($env:RELEASE_CHANNEL -eq 'stable') { @('--prerelease=false', '--latest=true') } else { @('--prerelease', '--latest=false') }
           git config user.name Khun
           git config user.email khun.mail@qq.com
           git show-ref --verify --quiet "refs/tags/$env:RELEASE_TAG"
@@ -85,9 +96,9 @@ jobs:
             if (-not $existingRelease.isDraft) { throw 'Release is already published; do not overwrite it' }
             gh release upload $env:RELEASE_TAG release-assets/bif-app-windows-x64-portable.zip release-assets/SHA256SUMS.txt --clobber
             if ($LASTEXITCODE -ne 0) { throw 'Draft asset upload failed' }
-            gh release edit $env:RELEASE_TAG --title $title --notes-file $notes --prerelease --latest=false
+            gh release edit $env:RELEASE_TAG --title $title --notes-file $notes @channelArgs
           } else {
-            gh release create $env:RELEASE_TAG release-assets/bif-app-windows-x64-portable.zip release-assets/SHA256SUMS.txt --verify-tag --draft --prerelease --latest=false --title $title --notes-file $notes
+            gh release create $env:RELEASE_TAG release-assets/bif-app-windows-x64-portable.zip release-assets/SHA256SUMS.txt --verify-tag --draft @channelArgs --title $title --notes-file $notes
           }
           if ($LASTEXITCODE -ne 0) { throw 'Draft upload/update failed; inspect before retrying' }
           $releaseUrl = gh release view $env:RELEASE_TAG --json apiUrl --jq .apiUrl
@@ -96,6 +107,6 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Cannot verify draft release' }
           $asset = $release.assets | Where-Object name -eq 'bif-app-windows-x64-portable.zip'
           if ($release.assets.Count -ne 2 -or $asset.digest -ne "sha256:$env:RELEASE_HASH") { throw 'Uploaded release assets failed verification' }
-          gh release edit $env:RELEASE_TAG --draft=false --prerelease --latest=false
+          gh release edit $env:RELEASE_TAG --draft=false @channelArgs
           if ($LASTEXITCODE -ne 0) { throw 'Release publication failed' }
           "Published $env:RELEASE_TAG with SHA256 $env:RELEASE_HASH"
