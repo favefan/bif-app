@@ -64,8 +64,8 @@ fn main() {
         Some(p) => p,
         None => return,
     };
-    // The portable ZIP carries an official Microsoft fixed runtime. Do not rely
-    // on an installed Evergreen runtime or change system-wide WebView settings.
+    // The small portable ZIP uses installed Evergreen. The optional larger ZIP
+    // supplies a fixed runtime without changing system-wide WebView settings.
     let webview = exe_dir.join("WebView2");
     if webview.join("msedgewebview2.exe").exists() {
         std::env::set_var("WEBVIEW2_BROWSER_EXECUTABLE_FOLDER", &webview);
@@ -140,7 +140,7 @@ fn main() {
                     drop(reserved);
                     *slot = Some(Gateway::spawn(&exe_dir.join("bifrost-http.exe"), &paths, port, key)?);
                     let gateway = slot.as_mut().unwrap();
-                    gateway.wait_ready(&client, Duration::from_secs(90))?;
+                    gateway.wait_ready_until(&client, Duration::from_secs(90), || state.quitting.load(Ordering::SeqCst))?;
                     gateway::save_state(&paths.desktop, port).map_err(|e| e.to_string())?;
                     *state.port.lock().unwrap() = Some(port);
                     Ok(port)

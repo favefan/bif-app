@@ -157,13 +157,25 @@ impl Gateway {
             port,
         })
     }
+    #[cfg(test)]
     pub fn wait_ready(
         &mut self,
         client: &reqwest::blocking::Client,
         timeout: Duration,
     ) -> Result<(), String> {
+        self.wait_ready_until(client, timeout, || false)
+    }
+    pub fn wait_ready_until(
+        &mut self,
+        client: &reqwest::blocking::Client,
+        timeout: Duration,
+        cancelled: impl Fn() -> bool,
+    ) -> Result<(), String> {
         let deadline = Instant::now() + timeout;
         while Instant::now() < deadline {
+            if cancelled() {
+                return Err("Startup cancelled".into());
+            }
             if let Some(status) = self.child.try_wait().map_err(|e| e.to_string())? {
                 return Err(format!(
                     "Bifrost exited during startup ({status}). See desktop/gateway.log."
@@ -325,6 +337,7 @@ mod smoke {
         assert!(again.child.try_wait().unwrap().is_some());
         assert!(!healthy(&client, port));
         // Test-owned credential and data only. Never touches the user's profile.
+        again.stop(Duration::from_secs(2)).unwrap();
         store.delete_test_credential();
         fs::remove_dir_all(&local).unwrap();
     }
@@ -333,6 +346,32 @@ mod smoke {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn early_exit_and_timeout_are_reported_and_reaped() {
+        let dir = std::env::temp_dir().join(format!("bif-app-exit-test-{}", std::process::id()));
+        let paths = Paths::from_local(&dir);
+        paths.create().unwrap();
+        // The Rust test executable rejects Bifrost's CLI flags immediately.
+        // This is a real child in the same Windows Job lifecycle as production.
+        let mut g = Gateway::spawn(
+            &std::env::current_exe().unwrap(),
+            &paths,
+            8180,
+            Zeroizing::new("test-secret".into()),
+        )
+        .unwrap();
+        let error = g
+            .wait_ready(&http_client().unwrap(), Duration::from_secs(10))
+            .unwrap_err();
+        assert!(error.contains("exited during startup"), "{error}");
+        assert!(g.stop(Duration::from_secs(1)).unwrap());
+        let timeout = g
+            .wait_ready(&http_client().unwrap(), Duration::ZERO)
+            .unwrap_err();
+        assert!(timeout.contains("did not become healthy"));
+        drop(g);
+        fs::remove_dir_all(dir).unwrap();
+    }
     #[test]
     fn local_data_is_separate() {
         let paths = Paths::from_local(Path::new("C:/Users/test/AppData/Local"));

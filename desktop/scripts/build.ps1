@@ -50,6 +50,7 @@ try {
         if ($Target -eq 'release') { $cargoArgs += '--release' }
         Run cargo $cargoArgs
         Copy-Item "$desktop/src-tauri/binaries/bifrost-http.exe" "$desktop/src-tauri/target/$Target/bifrost-http.exe" -Force
+        Copy-Item "$desktop/src-tauri/binaries/COMMIT.txt" "$desktop/src-tauri/target/$Target/COMMIT.txt" -Force
         if ($Target -eq 'debug') { return }
     }
     & "$PSScriptRoot/package.ps1" -IncludeWebView2:$IncludeWebView2
