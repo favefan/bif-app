@@ -2,7 +2,7 @@ name: Desktop Windows
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches: [main, 'feat/**', 'fix/**']
     paths: ['desktop/**', '.github/workflows/desktop-windows.yml', 'transports/**', 'core/**', 'framework/**', 'plugins/**', 'ui/**']
   pull_request:
     paths: ['desktop/**', '.github/workflows/desktop-windows.yml']
@@ -53,6 +53,12 @@ jobs:
         run: ./desktop/scripts/build.ps1 test
       - name: Launch extracted portable desktop and verify ownership
         run: ./desktop/scripts/host-smoke.ps1
+      - name: Exercise isolated Desktop Settings WebView
+        run: |
+          cargo build --locked --manifest-path desktop/src-tauri/Cargo.toml
+          Copy-Item desktop/src-tauri/binaries/bifrost-http.exe desktop/src-tauri/target/debug/bifrost-http.exe -Force
+          npm install --prefix desktop/.tools/qa --no-save --package-lock=false playwright@1.63.0
+          node desktop/scripts/settings-smoke.cjs
       - name: Verify ordinary gateway still builds
         run: go build -o desktop/dist/bifrost-server-check.exe ./transports/bifrost-http
         env:
@@ -65,3 +71,9 @@ jobs:
             desktop/dist/SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 30
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: desktop-settings-test-evidence
+          path: desktop/test-results/settings-*.png
+          if-no-files-found: ignore

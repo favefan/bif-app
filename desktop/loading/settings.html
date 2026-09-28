@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>bif-app · Desktop Settings</title>
+  <link rel="stylesheet" href="settings.css">
+  <script src="settings.js" defer></script>
+</head>
+<body>
+  <main>
+    <header><p class="brand">bif-app</p><h1>桌面设置</h1><p class="intro">设置 Gateway 的监听地址和端口。</p></header>
+    <section class="current" aria-label="当前运行状态">
+      <span id="run-label">正在读取 Gateway 状态…</span>
+      <output id="current-url">—</output>
+      <small id="current-bind"></small>
+    </section>
+    <form id="settings-form">
+      <fieldset id="fields" disabled>
+        <label for="host">监听地址</label>
+        <select id="host" data-testid="desktop-host">
+          <option value="127.0.0.1">仅本机 · 127.0.0.1</option>
+          <option value="0.0.0.0">局域网 · 0.0.0.0（所有 IPv4 网卡）</option>
+        </select>
+        <div id="lan-warning" class="warning" hidden>
+          <p>同一网络的设备可能访问 Gateway 和 Bifrost 管理界面。启用前，请在原 Bifrost UI 中配置适当的认证。</p>
+          <p>桌面窗口仍使用 127.0.0.1。其他设备需使用此电脑的局域网 IP；应用不会自动修改 Windows 防火墙。</p>
+          <label class="check"><input id="allow-lan" type="checkbox" data-testid="desktop-lan-confirm">我了解并允许局域网访问</label>
+        </div>
+        <label for="port">首选端口</label>
+        <input id="port" type="number" min="1" max="65535" step="1" required inputmode="numeric" data-testid="desktop-port" aria-describedby="port-help">
+        <small id="port-help">有效范围 1–65535。首次启动默认使用 8080。</small>
+        <label class="check fallback"><input id="auto-port" type="checkbox" data-testid="desktop-auto-port">端口占用时自动换用附近可用端口</label>
+        <small>自动选择不会覆盖首选端口，下次启动会优先复用实际端口。</small>
+      </fieldset>
+      <p id="status" role="status" aria-live="polite"></p>
+      <footer><p>应用设置会重启 Gateway，短暂中断 API 服务。</p><div class="buttons"><button type="button" id="close">关闭</button><button type="submit" id="save" class="primary" disabled data-testid="desktop-save">保存并重启 Gateway</button></div></footer>
+    </form>
+  </main>
+</body>
+</html>

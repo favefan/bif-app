@@ -1,5 +1,24 @@
 # Portable alpha validation
 
+## Desktop Settings (alpha.2)
+
+The settings implementation adds eleven unit/helper tests in total and two
+real-sidecar integration tests. Local Windows runs passed settings migration,
+validation, IPC origin checks, port changes, occupied-port rollback, automatic
+fallback with a preserved preference, process restart, state-write-failure
+rollback, explicit LAN binding, return to loopback, cancellation, and key reuse.
+
+The Windows workflow additionally runs `scripts/settings-smoke.cjs` against the
+actual debug host/WebView in a disposable CI profile. It checks the separate
+settings window, remote UI IPC denial, invalid input, rollback, fallback,
+persistence across host restart, LAN confirmation, loopback navigation, independent
+window close and light/dark/minimum-size screenshots. Screenshots are uploaded as
+`desktop-settings-test-evidence`; release notes record the observed result.
+The published portable binary is a release build; test-only window launch support
+and Playwright are not included as runtime dependencies.
+
+The original alpha.1 desktop acceptance record follows.
+
 The first release uses the installed Microsoft WebView2 runtime. No installer
 or bundled-runtime release is included in the first acceptance gate.
 

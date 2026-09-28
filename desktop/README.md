@@ -27,12 +27,37 @@ Wait for startup to finish: the window opens the original Bifrost UI after
 `GET /health` returns HTTP 200. Provider credentials are configured in that UI.
 Basic startup and API validation do not require a paid provider.
 
-The preferred API base URL is **http://127.0.0.1:8080/v1**. If occupied, bif-app
+The default API base URL is **http://127.0.0.1:8080/v1**. If occupied, bif-app
 selects a free port in 8080–8180 and reuses it on the next launch. It probes an
 occupied port but never attaches to or kills an unowned server, even one
 responding to Bifrost health checks. **Copy API Base URL** in the tray gives the
 actual endpoint for an OpenAI-compatible client such as Pi Agent or OpenCode.
 Use Bifrost's normal provider/model naming. No client configuration is modified.
+
+## Desktop Settings
+
+Choose **Desktop Settings…** from the system tray to open a small, separate
+desktop window. The original Bifrost UI and its Settings pages are unchanged.
+
+- **监听地址 / Listen address**: defaults to `127.0.0.1` (this computer only).
+  You can explicitly choose `0.0.0.0` (all IPv4 interfaces) and acknowledge the
+  LAN access notice. Other devices may then reach both the gateway and management
+  UI, subject to Windows firewall/network policy. Configure suitable authentication
+  in the original Bifrost UI first. No firewall rule is added automatically.
+- **首选端口 / Preferred port**: any port from 1 to 65535. The optional automatic
+  fallback tries the following 100 ports, wrapping after 65535. Turn it off to
+  require the exact port. Occupied services are never killed or reused.
+- **Current API / Actual listener**: reports the active endpoint separately from
+  your saved preference. Automatic fallback does not overwrite your preferred port.
+- **保存并重启 Gateway / Save and restart Gateway**: gracefully stops the owned
+  gateway, starts it with the new settings and checks its health and socket owner.
+  API requests are briefly interrupted. Failed startup or state persistence triggers
+  an attempt to restore the previous settings, with a clear error if recovery fails.
+
+The main window and tray API URL always use `127.0.0.1` and the actual port, even
+in LAN mode; other devices use this computer's LAN IP instead of `0.0.0.0`.
+Closing Desktop Settings closes only that window. Only the bundled settings
+window has permission to read/apply desktop settings; the Bifrost WebView does not.
 
 Closing the window hides it to the system tray and keeps the gateway available.
 Click the tray icon or choose **Show bif-app** to restore it. **Quit** closes
@@ -50,7 +75,9 @@ location. External web links open in your default browser.
 
 - `%LOCALAPPDATA%\bif-app\bifrost\`: original Bifrost local SQLite databases,
   configuration and logs. This is the only business configuration store.
-- `%LOCALAPPDATA%\bif-app\desktop\state.json`: selected port only.
+- `%LOCALAPPDATA%\bif-app\desktop\state.json`: desktop listen address, preferred
+  port, automatic fallback choice and last selected port. Alpha.1 port-only state
+  is migrated automatically, preserving its port preference and loopback default.
 - `%LOCALAPPDATA%\bif-app\desktop\gateway.log`: stdout/stderr, with previous
   startup log rotation above 5 MiB; startup errors also appear in a native dialog.
 - `%LOCALAPPDATA%\bif-app\desktop\webview\`: WebView browser profile.
@@ -105,6 +132,12 @@ not by a desktop network updater.
 `build.ps1 test` runs Rust unit tests (port conflicts/persistence, local paths,
 command construction, HTTP health, key creation/reuse and actual Windows
 Credential Manager), then real-sidecar smoke tests. No paid API is called.
+The settings smoke test also covers port changes, occupied-port and write-failure
+rollback, persisted preference versus actual port, LAN binding and cancellation.
+`scripts/settings-smoke.cjs` runs in a disposable Windows CI profile against a
+debug host and its actual WebView. The debug-only `--test-settings-window` flag
+opens the same window as the tray entry; release builds do not expose this flag.
+Its Playwright dependency is confined to `desktop/.tools/qa`, outside the product.
 Windows CI performs builds and validation before uploading an artifact.
 GUI checks and any platform coverage limitations are recorded in the release
 notes; a successful backend smoke test alone does not prove tray usability.

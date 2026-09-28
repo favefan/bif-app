@@ -1,12 +1,22 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "bif-app",
-  "version": "0.1.0-alpha.1",
+  "version": "0.1.0-alpha.2",
   "identifier": "io.github.favefan.bif-app",
   "build": { "frontendDist": "../loading" },
   "app": {
     "windows": [],
-    "security": { "capabilities": [], "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'" }
+    "withGlobalTauri": true,
+    "security": {
+      "capabilities": [{
+        "identifier": "desktop-settings",
+        "description": "Only bundled desktop settings may configure the owned gateway.",
+        "windows": ["desktop-settings"],
+        "local": true,
+        "permissions": ["allow-get-desktop-settings", "allow-apply-desktop-settings", "core:window:allow-close"]
+      }],
+      "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' ipc: http://ipc.localhost"
+    }
   },
   "bundle": { "active": false, "icon": ["icons/icon.ico", "icons/icon.png"] }
 }

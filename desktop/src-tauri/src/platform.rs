@@ -13,9 +13,21 @@ fn wide(s: &str) -> Vec<u16> {
     s.encode_utf16().chain(Some(0)).collect()
 }
 
+#[cfg(test)]
+pub fn test_id() -> String {
+    format!(
+        "{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    )
+}
+
 /// Verify the listening socket is owned by our exact child PID before loading UI.
 /// A health response alone cannot distinguish an unrelated local service.
-pub fn owns_listener(pid: u32, port: u16) -> bool {
+pub fn owns_listener(pid: u32, port: u16, address: std::net::Ipv4Addr) -> bool {
     use windows_sys::Win32::{NetworkManagement::IpHelper::*, Networking::WinSock::AF_INET};
     unsafe {
         let mut size = 0;
@@ -45,7 +57,7 @@ pub fn owns_listener(pid: u32, port: u16) -> bool {
             .any(|r| {
                 r.dwOwningPid == pid
                     && u16::from_be(r.dwLocalPort as u16) == port
-                    && r.dwLocalAddr == u32::from_ne_bytes([127, 0, 0, 1])
+                    && r.dwLocalAddr == u32::from_ne_bytes(address.octets())
             })
     }
 }

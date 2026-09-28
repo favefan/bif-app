@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use crate::platform::Job;
-use serde::{Deserialize, Serialize};
+use crate::settings::Settings;
 use std::{
     fs::{self, File, OpenOptions},
     io::{self, BufRead, BufReader, Write},
@@ -37,24 +37,6 @@ impl Paths {
     }
 }
 
-#[derive(Default, Serialize, Deserialize)]
-pub struct State {
-    pub port: Option<u16>,
-}
-pub fn read_state(dir: &Path) -> State {
-    fs::read(dir.join("state.json"))
-        .ok()
-        .and_then(|v| serde_json::from_slice(&v).ok())
-        .unwrap_or_default()
-}
-pub fn save_state(dir: &Path, port: u16) -> io::Result<()> {
-    let temp = dir.join("state.json.tmp");
-    fs::write(
-        &temp,
-        serde_json::to_vec_pretty(&State { port: Some(port) })?,
-    )?;
-    fs::rename(temp, dir.join("state.json"))
-}
 pub fn http_client() -> Result<reqwest::blocking::Client, reqwest::Error> {
     reqwest::blocking::Client::builder()
         .no_proxy()
@@ -71,15 +53,14 @@ pub fn healthy(client: &reqwest::blocking::Client, port: u16) -> bool {
 /// A responding Bifrost is still not proof of ownership. Never attach to it.
 /// Holding the selected socket until immediately before spawn narrows the bind race.
 pub fn reserve_port(
+    settings: &Settings,
     preferred: Option<u16>,
     client: &reqwest::blocking::Client,
 ) -> io::Result<TcpListener> {
-    let ports = preferred
-        .filter(|p| (8080..=8180).contains(p))
-        .into_iter()
-        .chain(8080..=8180);
+    settings.validate().map_err(io::Error::other)?;
+    let ports = settings.ports(preferred);
     for port in ports {
-        match TcpListener::bind((Ipv4Addr::LOCALHOST, port)) {
+        match TcpListener::bind((settings.address(), port)) {
             Ok(listener) => return Ok(listener),
             Err(_) => {
                 let _responds_to_health = healthy(client, port);
@@ -88,13 +69,22 @@ pub fn reserve_port(
     }
     Err(io::Error::new(
         io::ErrorKind::AddrInUse,
-        "No free localhost port in 8080–8180",
+        format!(
+            "监听地址 {} 上端口 {} 不可用{}。",
+            settings.host,
+            settings.preferred_port,
+            if settings.auto_port {
+                "，附近 100 个端口也不可用"
+            } else {
+                "（自动换用端口已关闭）"
+            }
+        ),
     ))
 }
 
-pub fn command(exe: &Path, paths: &Paths, port: u16, key: &str) -> Command {
+pub fn command(exe: &Path, paths: &Paths, host: &str, port: u16, key: &str) -> Command {
     let mut cmd = Command::new(exe);
-    cmd.args(["-host", "127.0.0.1", "-port", &port.to_string(), "-app-dir"])
+    cmd.args(["-host", host, "-port", &port.to_string(), "-app-dir"])
         .arg(&paths.data)
         .args(["-shutdown-on-stdin-close", "-log-style", "json"])
         .current_dir(&paths.data)
@@ -115,14 +105,17 @@ pub struct Gateway {
     _job: Option<Job>,
     readers: Vec<thread::JoinHandle<()>>,
     pub port: u16,
+    host: Ipv4Addr,
 }
 impl Gateway {
     pub fn spawn(
         exe: &Path,
         paths: &Paths,
+        settings: &Settings,
         port: u16,
         key: Zeroizing<String>,
     ) -> Result<Self, String> {
+        settings.validate()?;
         let job = Job::new().map_err(|e| format!("Cannot create gateway ownership job: {e}"))?;
         let log_path = paths.desktop.join("gateway.log");
         if fs::metadata(&log_path).is_ok_and(|m| m.len() > 5 * 1024 * 1024) {
@@ -137,7 +130,7 @@ impl Gateway {
                 .open(log_path)
                 .map_err(|e| e.to_string())?,
         ));
-        let mut child = command(exe, paths, port, &key)
+        let mut child = command(exe, paths, &settings.host, port, &key)
             .spawn()
             .map_err(|e| format!("Cannot start the bundled Bifrost gateway: {e}"))?;
         if let Err(e) = job.attach_and_resume(&child) {
@@ -155,6 +148,7 @@ impl Gateway {
             _job: Some(job),
             readers,
             port,
+            host: settings.address(),
         })
     }
     #[cfg(test)]
@@ -181,7 +175,7 @@ impl Gateway {
                     "Bifrost exited during startup ({status}). See desktop/gateway.log."
                 ));
             }
-            if crate::platform::owns_listener(self.child.id(), self.port)
+            if crate::platform::owns_listener(self.child.id(), self.port, self.host)
                 && healthy(client, self.port)
             {
                 // Require our child to remain alive after the probe. Unknown listeners
@@ -316,21 +310,31 @@ mod smoke {
     fn real_gateway_ui_api_graceful_restart_and_job_cleanup() {
         let exe =
             PathBuf::from(std::env::var("BIF_APP_TEST_SIDECAR").expect("set BIF_APP_TEST_SIDECAR"));
-        let local = std::env::temp_dir().join(format!("bif-app-smoke-{}", std::process::id()));
+        let local =
+            std::env::temp_dir().join(format!("bif-app-smoke-{}", crate::platform::test_id()));
         let paths = Paths::from_local(&local);
         paths.create().unwrap();
-        let store = WindowsCredentials(format!("bif-app/smoke/{}", std::process::id()));
+        let store = WindowsCredentials(format!("bif-app/smoke/{}", crate::platform::test_id()));
         let key = encryption_key(&store, paths.has_data().unwrap()).unwrap();
         let client = http_client().unwrap();
-        let socket = reserve_port(None, &client).unwrap();
+        let socket = reserve_port(&Settings::default(), None, &client).unwrap();
         let port = socket.local_addr().unwrap().port();
         drop(socket);
-        let mut gateway = Gateway::spawn(&exe, &paths, port, key.clone()).unwrap();
+        let mut gateway =
+            Gateway::spawn(&exe, &paths, &Settings::default(), port, key.clone()).unwrap();
         gateway
             .wait_ready(&client, Duration::from_secs(90))
             .unwrap();
-        assert!(crate::platform::owns_listener(gateway.child.id(), port));
-        assert!(!crate::platform::owns_listener(std::process::id(), port));
+        assert!(crate::platform::owns_listener(
+            gateway.child.id(),
+            port,
+            Ipv4Addr::LOCALHOST
+        ));
+        assert!(!crate::platform::owns_listener(
+            std::process::id(),
+            port,
+            Ipv4Addr::LOCALHOST
+        ));
         let base = format!("http://127.0.0.1:{port}");
         let root = client.get(&base).send().unwrap();
         assert_eq!(root.status(), 200);
@@ -377,7 +381,14 @@ mod smoke {
             response["choices"][0]["message"]["content"],
             "local smoke response"
         );
-        save_state(&paths.desktop, port).unwrap();
+        crate::settings::save_state(
+            &paths.desktop,
+            &crate::settings::State {
+                settings: Settings::default(),
+                port: Some(port),
+            },
+        )
+        .unwrap();
         assert!(
             gateway.stop(Duration::from_secs(40)).unwrap(),
             "graceful exit required, not forced kill"
@@ -410,7 +421,11 @@ mod smoke {
         let mut again = Gateway::spawn(
             &exe,
             &paths,
-            read_state(&paths.desktop).port.unwrap(),
+            &Settings::default(),
+            crate::settings::read_state(&paths.desktop)
+                .unwrap()
+                .port
+                .unwrap(),
             encryption_key(&store, true).unwrap(),
         )
         .unwrap();
@@ -445,7 +460,8 @@ mod tests {
     use super::*;
     #[test]
     fn early_exit_and_timeout_are_reported_and_reaped() {
-        let dir = std::env::temp_dir().join(format!("bif-app-exit-test-{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("bif-app-exit-test-{}", crate::platform::test_id()));
         let paths = Paths::from_local(&dir);
         paths.create().unwrap();
         // The Rust test executable rejects Bifrost's CLI flags immediately.
@@ -453,6 +469,7 @@ mod tests {
         let mut g = Gateway::spawn(
             &std::env::current_exe().unwrap(),
             &paths,
+            &Settings::default(),
             8180,
             Zeroizing::new("test-secret".into()),
         )
@@ -478,7 +495,13 @@ mod tests {
     #[test]
     fn command_uses_loopback_and_environment_secret() {
         let paths = Paths::from_local(Path::new("C:/test space"));
-        let cmd = command(Path::new("gateway.exe"), &paths, 8091, "test-secret");
+        let cmd = command(
+            Path::new("gateway.exe"),
+            &paths,
+            "127.0.0.1",
+            8091,
+            "test-secret",
+        );
         let args: Vec<_> = cmd
             .get_args()
             .map(|s| s.to_string_lossy().to_string())
@@ -493,17 +516,25 @@ mod tests {
     #[test]
     fn persisted_port_and_conflict_selection() {
         let client = http_client().unwrap();
-        let held = reserve_port(Some(8178), &client).unwrap();
+        let held = reserve_port(&Settings::default(), Some(8178), &client).unwrap();
         let p = held.local_addr().unwrap().port();
-        let next = reserve_port(Some(p), &client).unwrap();
+        let next = reserve_port(&Settings::default(), Some(p), &client).unwrap();
         assert_ne!(next.local_addr().unwrap().port(), p);
         drop(held);
-        let selected = reserve_port(Some(p), &client).unwrap();
+        let selected = reserve_port(&Settings::default(), Some(p), &client).unwrap();
         assert_eq!(selected.local_addr().unwrap().port(), p);
-        let dir = std::env::temp_dir().join(format!("bif-app-state-{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("bif-app-state-{}", crate::platform::test_id()));
         fs::create_dir_all(&dir).unwrap();
-        save_state(&dir, p).unwrap();
-        assert_eq!(read_state(&dir).port, Some(p));
+        crate::settings::save_state(
+            &dir,
+            &crate::settings::State {
+                settings: Settings::default(),
+                port: Some(p),
+            },
+        )
+        .unwrap();
+        assert_eq!(crate::settings::read_state(&dir).unwrap().port, Some(p));
         fs::remove_dir_all(dir).unwrap();
     }
     #[test]
