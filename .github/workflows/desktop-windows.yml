@@ -3,9 +3,9 @@ on:
   workflow_dispatch:
   push:
     branches: [main, 'feat/**', 'fix/**']
-    paths: ['desktop/**', '.github/workflows/desktop-windows.yml', 'transports/**', 'core/**', 'framework/**', 'plugins/**', 'ui/**']
+    paths: ['desktop/**', '.github/workflows/desktop-windows.yml', 'transports/**', 'core/**', 'framework/**', 'plugins/**', 'ui/**', 'tests/e2e/**']
   pull_request:
-    paths: ['desktop/**', '.github/workflows/desktop-windows.yml']
+    paths: ['desktop/**', '.github/workflows/desktop-windows.yml', 'ui/**', 'tests/e2e/**']
 permissions:
   contents: read
 concurrency:
@@ -50,6 +50,10 @@ jobs:
           cache-on-failure: true
       - name: Build UI, gateway, Tauri and portable ZIP
         run: ./desktop/scripts/build.ps1 release
+      - name: Install desktop UI E2E test dependencies
+        run: npm ci --prefix tests/e2e --no-audit --no-fund
+      - name: Verify ordinary and desktop UI presentations
+        run: node desktop/scripts/oss-ui-smoke.mjs
       - name: Desktop unit and real gateway smoke tests
         run: ./desktop/scripts/build.ps1 test
       - name: Launch extracted portable desktop and verify ownership
@@ -77,4 +81,13 @@ jobs:
         with:
           name: desktop-settings-test-evidence
           path: desktop/test-results/settings-*.png
+          if-no-files-found: ignore
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: desktop-ui-presentation-e2e-evidence
+          path: |
+            desktop/test-results/oss-ui-*/
+            desktop/test-results/oss-ui-gateway.log
+            desktop/playwright-report/
           if-no-files-found: ignore

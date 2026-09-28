@@ -6,8 +6,10 @@ Gateway by Maxim.
 Bifrost is developed by Maxim.
 bif-app is not affiliated with or endorsed by Maxim.
 
-The original Bifrost UI, HTTP gateway, providers, routing, plugins, logging,
-usage, MCP and model catalog run unchanged inside a thin Tauri v2 Windows host.
+The original Bifrost UI and HTTP gateway run inside a thin Tauri v2 Windows host.
+Providers, routing, plugins, logging, usage, MCP and the model catalog retain
+their original behavior. The desktop UI hides audited Enterprise-only placeholder
+entries and upgrade prompts; see [the presentation scope and maintenance plan](OSS_UI_PLAN.md).
 This is not a new gateway or a second configuration system.
 
 ## Portable usage
@@ -37,7 +39,9 @@ Use Bifrost's normal provider/model naming. No client configuration is modified.
 ## Desktop Settings
 
 Choose **Desktop Settings…** from the system tray to open a small, separate
-desktop window. The original Bifrost UI and its Settings pages are unchanged.
+desktop window. This network configuration lives in the desktop layer. The small
+[Enterprise presentation changes](OSS_UI_PLAN.md) in the original UI do not
+change routes, permissions, APIs, or business configuration.
 
 - **监听地址 / Listen address**: a text field with default value and placeholder
   `127.0.0.1`. Enter an IPv4 address, an IPv6 literal (without URL brackets or a

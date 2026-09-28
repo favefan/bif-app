@@ -19,7 +19,20 @@ try {
         # Invoke the very same Vite and typecheck commands; upstream copy-build
         # uses POSIX rm/cp, so copy the generated output natively on Windows.
         Push-Location ui
-        try { Run npx @('--no-install','vite','build'); Run npm @('run','typecheck') } finally { Pop-Location }
+        $previousDesktopHideEnterpriseUI = [Environment]::GetEnvironmentVariable('BIFROST_DESKTOP_HIDE_ENTERPRISE_UI', 'Process')
+        try {
+            # Desktop-only UI presentation flag; do not persist it into gateway/business configuration.
+            $env:BIFROST_DESKTOP_HIDE_ENTERPRISE_UI = 'true'
+            Run npx @('--no-install','vite','build')
+            Run npm @('run','typecheck')
+        } finally {
+            if ($null -eq $previousDesktopHideEnterpriseUI) {
+                Remove-Item Env:BIFROST_DESKTOP_HIDE_ENTERPRISE_UI -ErrorAction SilentlyContinue
+            } else {
+                $env:BIFROST_DESKTOP_HIDE_ENTERPRISE_UI = $previousDesktopHideEnterpriseUI
+            }
+            Pop-Location
+        }
         $embedded = Join-Path $repo 'transports/bifrost-http/ui'
         if (Test-Path $embedded) {
             if ((Resolve-Path $embedded).Path -ne "$repo\transports\bifrost-http\ui") { throw 'Unexpected UI output path' }
