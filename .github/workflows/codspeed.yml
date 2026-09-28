@@ -34,6 +34,8 @@ concurrency:
 jobs:
   benchmarks:
     name: Benchmarks (${{ matrix.name }})
+    # Modified for bif-app: this runner belongs to upstream, not to forks.
+    if: github.repository == 'maximhq/bifrost'
     # CodSpeed's managed bare-metal runner for walltime benchmarks.
     # https://codspeed.io/docs/benchmarks/go
     # The org's Default runner group must "Allow public repositories", or the

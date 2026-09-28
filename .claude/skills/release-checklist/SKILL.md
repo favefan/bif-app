@@ -16,11 +16,13 @@ The registry currently holds two migration-safety checks. It is designed to grow
 
 ## Scope: what "the release" means
 
+<!-- Modified for bif-app: the fork's integration branch is origin/main. -->
+
 Determine the change set to audit, in this order:
 
 1. If the user passed a git ref or range (e.g. `/release-checklist v1.4.0..HEAD` or
-   `/release-checklist origin/dev`), use it.
-2. Otherwise default to everything not yet on the main branch: diff `origin/dev...HEAD`
+   `/release-checklist origin/main`), use it.
+2. Otherwise default to everything not yet on the main branch: diff `origin/main...HEAD`
    (three-dot) and also include uncommitted working-tree changes.
 3. If that range is empty, tell the user and ask for an explicit range.
 
@@ -28,8 +30,8 @@ Gather the raw material once, up front:
 
 ```bash
 git fetch origin --quiet
-git diff --stat origin/dev...HEAD
-git diff origin/dev...HEAD -- '**/migrations.go' '**/matviews.go'
+git diff --stat origin/main...HEAD
+git diff origin/main...HEAD -- '**/migrations.go' '**/matviews.go'
 git status --porcelain
 ```
 

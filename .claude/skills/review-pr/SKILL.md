@@ -6,7 +6,8 @@ description: Reviews a PR or diff with multi-angle finders and adversarial verif
 # PR Review (bifrost custom)
 
 ## Scope
-If a PR number is given: `gh pr view <N> --json title,body,author,baseRefName,headRefName,state,additions,deletions,changedFiles` and `gh pr diff <N>` define the scope. Otherwise use `git diff @{upstream}...HEAD` (fall back to `git diff dev...HEAD`, then `git diff HEAD` for uncommitted work).
+<!-- Modified for bif-app: use the fork's main branch as the review fallback. -->
+If a PR number is given: `gh pr view <N> --json title,body,author,baseRefName,headRefName,state,additions,deletions,changedFiles` and `gh pr diff <N>` define the scope. Otherwise use `git diff @{upstream}...HEAD` (fall back to `git diff origin/main...HEAD`, then `git diff HEAD` for uncommitted work).
 
 The diff is the only review scope. When an angle needs surrounding code, Read files in this checkout if it matches the PR branch, otherwise fetch via `gh`.
 
