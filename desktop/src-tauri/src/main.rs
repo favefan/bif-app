@@ -9,6 +9,7 @@ use gateway::Paths;
 use serde::Serialize;
 use settings::Settings;
 use std::{
+    net::SocketAddr,
     path::PathBuf,
     sync::{
         atomic::{AtomicBool, Ordering},
@@ -28,7 +29,7 @@ use tauri_plugin_opener::OpenerExt;
 
 struct Runtime {
     controller: Mutex<Controller>,
-    port: Mutex<Option<u16>>,
+    endpoint: Mutex<Option<SocketAddr>>,
     busy: AtomicBool,
     quitting: AtomicBool,
     credential: platform::WindowsCredentials,
@@ -58,10 +59,16 @@ fn fail(app: &tauri::AppHandle, message: &str) {
     }
     platform::error_dialog(message);
 }
-fn navigate(app: &tauri::AppHandle, port: Option<u16>) -> Result<(), String> {
+fn gateway_origin(url: &tauri::Url, endpoint: SocketAddr) -> bool {
+    let expected: tauri::Url = format!("http://{endpoint}")
+        .parse()
+        .expect("IP endpoint URL");
+    url.origin() == expected.origin()
+}
+fn navigate(app: &tauri::AppHandle, endpoint: Option<SocketAddr>) -> Result<(), String> {
     if let Some(w) = app.get_webview_window("main") {
-        let url = match port {
-            Some(p) => format!("http://127.0.0.1:{p}"),
+        let url = match endpoint {
+            Some(address) => format!("http://{address}"),
             None => "http://tauri.localhost/index.html".into(),
         };
         w.navigate(url.parse().map_err(|e| format!("Invalid UI URL: {e}"))?)
@@ -135,7 +142,7 @@ fn snapshot(runtime: &Runtime) -> Snapshot {
     Snapshot {
         settings: c.saved.settings.clone(),
         actual_port: port,
-        api_url: port.map(|p| format!("http://127.0.0.1:{p}/v1")),
+        api_url: c.endpoint().map(|address| format!("http://{address}/v1")),
         busy: runtime.busy.load(Ordering::SeqCst),
     }
 }
@@ -156,13 +163,9 @@ async fn apply_desktop_settings(
     app: tauri::AppHandle,
     runtime: tauri::State<'_, Arc<Runtime>>,
     settings: Settings,
-    allow_lan: bool,
 ) -> Result<Snapshot, String> {
     authorize_settings(&window)?;
     settings.validate()?;
-    if settings.host == "0.0.0.0" && !allow_lan {
-        return Err("请先确认局域网访问提示。".into());
-    }
     if runtime.quitting.load(Ordering::SeqCst) {
         return Err("应用正在退出。".into());
     }
@@ -181,13 +184,13 @@ async fn apply_desktop_settings(
         // Settings renderer stays available while the original UI returns to the
         // local loading screen; it never receives desktop IPC capabilities.
         navigate(&app, None)?;
-        *runtime.port.lock().unwrap() = None;
+        *runtime.endpoint.lock().unwrap() = None;
         let changed = c.apply(settings, &key, || runtime.quitting.load(Ordering::SeqCst));
-        let port = c.port();
-        *runtime.port.lock().unwrap() = port;
+        let endpoint = c.endpoint();
+        *runtime.endpoint.lock().unwrap() = endpoint;
         drop(c);
         if !runtime.quitting.load(Ordering::SeqCst) {
-            navigate(&app, port)?;
+            navigate(&app, endpoint)?;
         }
         changed?;
         let mut reply = snapshot(&runtime);
@@ -217,7 +220,7 @@ fn main() {
             let paths = Paths::from_local(&app.path().local_data_dir()?); paths.create()?;
             let credential = platform::WindowsCredentials("bif-app/gateway-encryption-key/v1".into());
             let runtime = Arc::new(Runtime { controller: Mutex::new(Controller::new(paths.clone(), exe_dir.join("bifrost-http.exe"))?),
-                port: Mutex::new(None), busy: AtomicBool::new(true), quitting: AtomicBool::new(false), credential });
+                endpoint: Mutex::new(None), busy: AtomicBool::new(true), quitting: AtomicBool::new(false), credential });
             app.manage(runtime.clone());
             let nav_app = app.handle().clone(); let nav_state = runtime.clone(); let popup_app = app.handle().clone();
             WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
@@ -225,7 +228,7 @@ fn main() {
                 .data_directory(paths.desktop.join("webview"))
                 .on_navigation(move |url| {
                     if url.scheme() == "tauri" || url.host_str() == Some("tauri.localhost") || url.as_str() == "about:blank" { return true; }
-                    if url.scheme() == "http" && url.host_str() == Some("127.0.0.1") && url.port() == *nav_state.port.lock().unwrap() { return true; }
+                    if nav_state.endpoint.lock().unwrap().is_some_and(|address| gateway_origin(url, address)) { return true; }
                     if matches!(url.scheme(), "https" | "http" | "mailto") { let _ = nav_app.opener().open_url(url.as_str(), None::<&str>); }
                     false
                 }).on_new_window(move |url, _| {
@@ -245,12 +248,12 @@ fn main() {
                 .tooltip("bif-app — local Bifrost gateway").menu(&menu).show_menu_on_left_click(false)
                 .on_tray_icon_event(|tray, event| { if matches!(event, TrayIconEvent::Click { button: MouseButton::Left, button_state: MouseButtonState::Up, .. }) { show(tray.app_handle()); } })
                 .on_menu_event(move |app, event| {
-                    let port = *tray_state.port.lock().unwrap();
+                    let endpoint = *tray_state.endpoint.lock().unwrap();
                     match event.id.as_ref() {
                         "show" => show(app),
                         "settings" => if let Err(e) = open_settings(app) { platform::error_dialog(&e); },
-                        "browser" => if let Some(p) = port { let _ = app.opener().open_url(format!("http://127.0.0.1:{p}"), None::<&str>); },
-                        "copy" => if let Some(p) = port { if let Err(e) = app.clipboard().write_text(format!("http://127.0.0.1:{p}/v1")) { fail(app, &format!("Cannot copy API URL: {e}")); } },
+                        "browser" => if let Some(address) = endpoint { let _ = app.opener().open_url(format!("http://{address}"), None::<&str>); },
+                        "copy" => if let Some(address) = endpoint { if let Err(e) = app.clipboard().write_text(format!("http://{address}/v1")) { fail(app, &format!("Cannot copy API URL: {e}")); } },
                         "login" => {
                             let manager = app.autolaunch();
                             let change = manager.is_enabled().and_then(|enabled| if enabled { manager.disable() } else { manager.enable() });
@@ -271,12 +274,12 @@ fn main() {
                     let mut c = state.controller.lock().unwrap();
                     let key = platform::encryption_key(&state.credential, c.paths.has_data().map_err(|e| e.to_string())?)?;
                     c.start(&key, || state.quitting.load(Ordering::SeqCst))?;
-                    *state.port.lock().unwrap() = c.port();
+                    *state.endpoint.lock().unwrap() = c.endpoint();
                     Ok(())
                 })();
                 state.busy.store(false, Ordering::SeqCst);
                 match startup {
-                    Ok(()) => { let port = *state.port.lock().unwrap(); if let Err(e) = navigate(&handle, port) { fail(&handle, &e); } },
+                    Ok(()) => { let endpoint = *state.endpoint.lock().unwrap(); if let Err(e) = navigate(&handle, endpoint) { fail(&handle, &e); } },
                     Err(e) if !state.quitting.load(Ordering::SeqCst) => fail(&handle, &format!("{e}\n\nLogs: {}", paths.desktop.display())),
                     Err(_) => (),
                 }
@@ -287,7 +290,7 @@ fn main() {
                     let stopped = if let Ok(mut c) = state.controller.try_lock() {
                         let exited = c.gateway.as_mut().and_then(|g| g.child.try_wait().ok().flatten()).is_some();
                         let lost_listener = c.gateway.as_ref().is_some_and(|g| !g.owns_listener());
-                        if exited || lost_listener { let _ = c.stop(); *state.port.lock().unwrap() = None; }
+                        if exited || lost_listener { let _ = c.stop(); *state.endpoint.lock().unwrap() = None; }
                         exited || lost_listener
                     } else { false };
                     if stopped {
@@ -321,6 +324,25 @@ fn main() {
 #[cfg(test)]
 mod ipc_tests {
     use super::*;
+    #[test]
+    fn navigation_uses_exact_actual_origin_including_default_http_port() {
+        for address in ["192.168.1.42:8080", "127.0.0.2:80", "[::1]:8080"] {
+            let endpoint = address.parse().unwrap();
+            assert!(gateway_origin(
+                &format!("http://{address}/workspace/providers")
+                    .parse()
+                    .unwrap(),
+                endpoint
+            ));
+            for wrong in [
+                "http://127.0.0.1:8080/",
+                "https://192.168.1.42:8080/",
+                "http://192.168.1.42:8081/",
+            ] {
+                assert!(!gateway_origin(&wrong.parse().unwrap(), endpoint));
+            }
+        }
+    }
     #[test]
     fn settings_commands_require_the_bundled_settings_origin() {
         assert!(local_settings_origin(

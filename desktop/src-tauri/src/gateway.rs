@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 use crate::platform::Job;
 use crate::settings::Settings;
+#[cfg(test)]
+use std::net::Ipv4Addr;
 use std::{
     fs::{self, File, OpenOptions},
     io::{self, BufRead, BufReader, Write},
-    net::{Ipv4Addr, TcpListener},
+    net::{IpAddr, SocketAddr, TcpListener},
     os::windows::process::CommandExt,
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
@@ -44,9 +46,13 @@ pub fn http_client() -> Result<reqwest::blocking::Client, reqwest::Error> {
         .timeout(Duration::from_secs(2))
         .build()
 }
+#[cfg(test)]
 pub fn healthy(client: &reqwest::blocking::Client, port: u16) -> bool {
+    healthy_at(client, SocketAddr::new(Ipv4Addr::LOCALHOST.into(), port))
+}
+pub fn healthy_at(client: &reqwest::blocking::Client, address: SocketAddr) -> bool {
     client
-        .get(format!("http://127.0.0.1:{port}/health"))
+        .get(format!("http://{address}/health"))
         .send()
         .is_ok_and(|r| r.status() == reqwest::StatusCode::OK)
 }
@@ -61,13 +67,21 @@ pub fn reserve_port(
     let ports = settings.ports(preferred);
     for port in ports {
         if crate::platform::port_in_use(port, settings.address())? {
-            let _responds_to_health = healthy(client, port);
+            let _responds_to_health =
+                healthy_at(client, crate::settings::endpoint(settings.address(), port));
             continue;
         }
         match TcpListener::bind((settings.address(), port)) {
             Ok(listener) => return Ok(listener),
+            Err(e) if e.kind() == io::ErrorKind::AddrNotAvailable => {
+                return Err(io::Error::new(
+                    e.kind(),
+                    format!("无法绑定地址 {}，请确认该 IP 属于当前电脑。", settings.host),
+                ));
+            }
             Err(_) => {
-                let _responds_to_health = healthy(client, port);
+                let _responds_to_health =
+                    healthy_at(client, crate::settings::endpoint(settings.address(), port));
             }
         }
     }
@@ -109,9 +123,12 @@ pub struct Gateway {
     _job: Option<Job>,
     readers: Vec<thread::JoinHandle<()>>,
     pub port: u16,
-    host: Ipv4Addr,
+    host: IpAddr,
 }
 impl Gateway {
+    pub fn endpoint(&self) -> SocketAddr {
+        crate::settings::endpoint(self.host, self.port)
+    }
     pub fn owns_listener(&self) -> bool {
         crate::platform::owns_listener(self.child.id(), self.port, self.host)
     }
@@ -137,7 +154,8 @@ impl Gateway {
                 .open(log_path)
                 .map_err(|e| e.to_string())?,
         ));
-        let mut child = command(exe, paths, &settings.host, port, &key)
+        // Resolve localhost ourselves to a deterministic loopback socket; never DNS.
+        let mut child = command(exe, paths, &settings.address().to_string(), port, &key)
             .spawn()
             .map_err(|e| format!("Cannot start the bundled Bifrost gateway: {e}"))?;
         if let Err(e) = job.attach_and_resume(&child) {
@@ -182,7 +200,7 @@ impl Gateway {
                     "Bifrost exited during startup ({status}). See desktop/gateway.log."
                 ));
             }
-            if self.owns_listener() && healthy(client, self.port) {
+            if self.owns_listener() && healthy_at(client, self.endpoint()) {
                 // Require our child to remain alive after the probe. Unknown listeners
                 // are never intentionally reused, including during bind races.
                 thread::sleep(Duration::from_millis(150));

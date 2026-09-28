@@ -1,5 +1,23 @@
 # Portable alpha validation
 
+## Custom listen address (alpha.3)
+
+The current suite contains fourteen unit/helper tests and two real-sidecar
+integration tests. Shared validation fixtures cover IPv4, IPv6 and localhost,
+including malformed IPs, URLs, ports, DNS names, IPv6 brackets/zones and empty
+input. Rust validates independently before stopping the existing gateway.
+
+Real-sidecar tests exercise custom loopback addresses, IPv6 loopback/wildcard,
+localhost, restart persistence, unassigned-address rollback and listener ownership.
+The native WebView CI test uses the same validation fixtures, confirms invalid
+input disables Save, then exercises localhost, a different loopback IP, IPv6 and
+an assigned runner NIC address. Health/API checks, the original dashboard and
+persisted restart must follow the actual address. The portable release host is
+also tested after extracting the final archive. No upstream UI or gateway source
+changes are required. Release notes record the final CI result.
+
+The alpha.2 and alpha.1 acceptance records below are historical.
+
 ## Desktop Settings (alpha.2)
 
 The settings implementation has twelve unit/helper tests in total and two

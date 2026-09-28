@@ -1,6 +1,29 @@
 // SPDX-License-Identifier: Apache-2.0
 use serde::{Deserialize, Serialize};
-use std::{fs, io, net::Ipv4Addr, path::Path};
+use std::{
+    fs, io,
+    net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
+    path::Path,
+};
+
+pub fn parse_host(host: &str) -> Result<IpAddr, String> {
+    let host = host.trim();
+    if host.eq_ignore_ascii_case("localhost") {
+        return Ok(Ipv4Addr::LOCALHOST.into());
+    }
+    host.parse::<IpAddr>()
+        .map(|ip| ip.to_canonical())
+        .map_err(|_| "请输入有效的 IP 地址或 localhost，不要包含协议、端口或路径。".into())
+}
+
+pub fn endpoint(address: IpAddr, port: u16) -> SocketAddr {
+    let address = match address {
+        IpAddr::V4(ip) if ip.is_unspecified() => Ipv4Addr::LOCALHOST.into(),
+        IpAddr::V6(ip) if ip.is_unspecified() => Ipv6Addr::LOCALHOST.into(),
+        ip => ip,
+    };
+    SocketAddr::new(address, port)
+}
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
@@ -20,20 +43,23 @@ impl Default for Settings {
 }
 impl Settings {
     pub fn validate(&self) -> Result<(), String> {
-        if !matches!(self.host.as_str(), "127.0.0.1" | "0.0.0.0") {
-            return Err("监听地址必须为 127.0.0.1（仅本机）或 0.0.0.0（所有 IPv4 网卡）。".into());
-        }
+        parse_host(&self.host)?;
         if self.preferred_port == 0 {
             return Err("端口必须为 1–65535。".into());
         }
         Ok(())
     }
-    pub fn address(&self) -> Ipv4Addr {
-        if self.host == "0.0.0.0" {
-            Ipv4Addr::UNSPECIFIED
+    pub fn address(&self) -> IpAddr {
+        parse_host(&self.host).expect("Settings must be validated before use")
+    }
+    pub fn normalized(mut self) -> Result<Self, String> {
+        self.validate()?;
+        self.host = if self.host.trim().eq_ignore_ascii_case("localhost") {
+            "localhost".into()
         } else {
-            Ipv4Addr::LOCALHOST
-        }
+            self.address().to_string()
+        };
+        Ok(self)
     }
     pub fn ports(&self, last_port: Option<u16>) -> Vec<u16> {
         let mut ports = Vec::new();
@@ -94,6 +120,32 @@ pub fn save_state(dir: &Path, state: &State) -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn custom_hosts_match_renderer_validation_cases() {
+        let cases: serde_json::Value =
+            serde_json::from_str(include_str!("../../tests/host-cases.json")).unwrap();
+        for host in cases["valid"].as_array().unwrap() {
+            assert!(parse_host(host.as_str().unwrap()).is_ok(), "{host}");
+        }
+        for host in cases["invalid"].as_array().unwrap() {
+            assert!(parse_host(host.as_str().unwrap()).is_err(), "{host}");
+        }
+        assert_eq!(
+            parse_host(" LOCALHOST ").unwrap(),
+            IpAddr::V4(Ipv4Addr::LOCALHOST)
+        );
+        for (host, expected) in [
+            ("0.0.0.0", "127.0.0.1:8080"),
+            ("192.168.1.42", "192.168.1.42:8080"),
+            ("::", "[::1]:8080"),
+            ("2001:db8::1", "[2001:db8::1]:8080"),
+        ] {
+            assert_eq!(
+                endpoint(parse_host(host).unwrap(), 8080).to_string(),
+                expected
+            );
+        }
+    }
     #[test]
     fn validates_bind_address_port_and_fallback_boundaries() {
         assert!(Settings::default().validate().is_ok());

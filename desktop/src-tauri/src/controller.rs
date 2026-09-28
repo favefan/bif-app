@@ -142,6 +142,48 @@ mod tests {
             actual,
             Ipv4Addr::LOCALHOST
         ));
+        for host in ["127.0.0.2", "::1", "::", "localhost"] {
+            c.apply(
+                Settings {
+                    host: host.into(),
+                    ..original.clone()
+                },
+                &key,
+                || false,
+            )
+            .unwrap();
+            let endpoint = c.endpoint().unwrap();
+            assert!(gateway::healthy_at(&client, endpoint), "{host}");
+            assert!(c.gateway.as_ref().unwrap().owns_listener());
+            assert_eq!(c.saved.settings.host, host);
+            c.stop().unwrap();
+            c.start(&key, || false).unwrap();
+            assert_eq!(c.endpoint().unwrap(), endpoint);
+        }
+        let pid = c.gateway.as_ref().unwrap().child.id();
+        assert!(c
+            .apply(
+                Settings {
+                    host: "999.1.2.3".into(),
+                    ..original.clone()
+                },
+                &key,
+                || false
+            )
+            .is_err());
+        assert_eq!(c.gateway.as_ref().unwrap().child.id(), pid);
+        let error = c
+            .apply(
+                Settings {
+                    host: "192.0.2.123".into(),
+                    ..original.clone()
+                },
+                &key,
+                || false,
+            )
+            .unwrap_err();
+        assert!(error.contains("已恢复之前"), "{error}");
+        assert!(gateway::healthy_at(&client, c.endpoint().unwrap()));
         c.apply(original, &key, || false).unwrap();
         assert!(crate::platform::owns_listener(
             c.gateway.as_ref().unwrap().child.id(),
@@ -181,6 +223,9 @@ impl Controller {
     }
     pub fn port(&self) -> Option<u16> {
         self.gateway.as_ref().map(|g| g.port)
+    }
+    pub fn endpoint(&self) -> Option<std::net::SocketAddr> {
+        self.gateway.as_ref().map(|g| g.endpoint())
     }
     fn launch(
         &self,
@@ -232,7 +277,7 @@ impl Controller {
         key: &Zeroizing<String>,
         cancelled: impl Fn() -> bool,
     ) -> Result<(), String> {
-        config.validate()?;
+        let config = config.normalized()?;
         if cancelled() {
             return Err("操作已取消。".into());
         }

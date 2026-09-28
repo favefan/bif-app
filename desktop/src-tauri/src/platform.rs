@@ -1,6 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Windows ownership and credential APIs. No secrets enter arguments or files.
-use std::{ffi::c_void, io, mem, os::windows::io::AsRawHandle, process::Child, ptr};
+use std::{
+    ffi::c_void,
+    io, mem,
+    net::{IpAddr, Ipv4Addr, Ipv6Addr},
+    os::windows::io::AsRawHandle,
+    process::Child,
+    ptr,
+};
 use windows_sys::Win32::{
     Foundation::{CloseHandle, GetLastError, ERROR_NOT_FOUND, HANDLE, INVALID_HANDLE_VALUE},
     Security::Credentials::*,
@@ -29,21 +36,23 @@ pub fn test_id() -> String {
 struct Listener {
     pid: u32,
     port: u16,
-    address: u32,
+    address: IpAddr,
 }
 
-fn listeners() -> io::Result<Vec<Listener>> {
+fn listeners_for(ipv6: bool) -> io::Result<Vec<Listener>> {
     use windows_sys::Win32::{
-        Foundation::ERROR_INSUFFICIENT_BUFFER, NetworkManagement::IpHelper::*,
-        Networking::WinSock::AF_INET,
+        Foundation::ERROR_INSUFFICIENT_BUFFER,
+        NetworkManagement::IpHelper::*,
+        Networking::WinSock::{AF_INET, AF_INET6},
     };
     unsafe {
+        let family = if ipv6 { AF_INET6 } else { AF_INET } as u32;
         let mut size = 0;
         let status = GetExtendedTcpTable(
             ptr::null_mut(),
             &mut size,
             0,
-            AF_INET as u32,
+            family,
             TCP_TABLE_OWNER_PID_LISTENER,
             0,
         );
@@ -54,14 +63,14 @@ fn listeners() -> io::Result<Vec<Listener>> {
             let mut buffer = vec![
                 0u64;
                 (size as usize)
-                    .max(mem::size_of::<MIB_TCPTABLE_OWNER_PID>())
+                    .max(mem::size_of::<MIB_TCP6TABLE_OWNER_PID>())
                     .div_ceil(8)
             ];
             let status = GetExtendedTcpTable(
                 buffer.as_mut_ptr().cast(),
                 &mut size,
                 0,
-                AF_INET as u32,
+                family,
                 TCP_TABLE_OWNER_PID_LISTENER,
                 0,
             );
@@ -70,6 +79,25 @@ fn listeners() -> io::Result<Vec<Listener>> {
             }
             if status != 0 {
                 return Err(io::Error::from_raw_os_error(status as i32));
+            }
+            if ipv6 {
+                let table = &*(buffer.as_ptr() as *const MIB_TCP6TABLE_OWNER_PID);
+                let needed = mem::offset_of!(MIB_TCP6TABLE_OWNER_PID, table)
+                    + table.dwNumEntries as usize * mem::size_of::<MIB_TCP6ROW_OWNER_PID>();
+                if needed > buffer.len() * 8 {
+                    return Err(io::Error::other("Invalid Windows IPv6 listener table size"));
+                }
+                return Ok(std::slice::from_raw_parts(
+                    table.table.as_ptr(),
+                    table.dwNumEntries as usize,
+                )
+                .iter()
+                .map(|r| Listener {
+                    pid: r.dwOwningPid,
+                    port: u16::from_be(r.dwLocalPort as u16),
+                    address: IpAddr::V6(Ipv6Addr::from(r.ucLocalAddr)).to_canonical(),
+                })
+                .collect());
             }
             let table = &*(buffer.as_ptr() as *const MIB_TCPTABLE_OWNER_PID);
             let needed = mem::offset_of!(MIB_TCPTABLE_OWNER_PID, table)
@@ -85,7 +113,7 @@ fn listeners() -> io::Result<Vec<Listener>> {
             .map(|r| Listener {
                 pid: r.dwOwningPid,
                 port: u16::from_be(r.dwLocalPort as u16),
-                address: r.dwLocalAddr,
+                address: Ipv4Addr::from(r.dwLocalAddr.to_ne_bytes()).into(),
             })
             .collect());
         }
@@ -94,30 +122,43 @@ fn listeners() -> io::Result<Vec<Listener>> {
         ))
     }
 }
-fn overlaps(row: &Listener, port: u16, address: std::net::Ipv4Addr) -> bool {
-    row.port == port
-        && (address.is_unspecified()
-            || row.address == 0
-            || row.address == u32::from_ne_bytes(address.octets()))
+fn listeners() -> io::Result<Vec<Listener>> {
+    let mut rows = listeners_for(false)?;
+    rows.extend(listeners_for(true)?);
+    Ok(rows)
+}
+fn overlaps(row: &Listener, port: u16, address: IpAddr) -> bool {
+    if row.port != port {
+        return false;
+    }
+    if row.address.is_ipv4() != address.is_ipv4() {
+        // An IPv6 wildcard may be dual-stack. Fail conservatively rather than
+        // trust a foreign listener that can shadow our health/UI endpoint.
+        return row.address == IpAddr::V6(Ipv6Addr::UNSPECIFIED)
+            || address == IpAddr::V6(Ipv6Addr::UNSPECIFIED);
+    }
+    address.is_unspecified() || row.address.is_unspecified() || row.address == address
 }
 /// Windows can accept a wildcard bind while a specific-address listener already
 /// owns that port. Such a listener can shadow localhost, so bind success alone
 /// is not sufficient evidence that a LAN port is available.
-pub fn port_in_use(port: u16, address: std::net::Ipv4Addr) -> io::Result<bool> {
+pub fn port_in_use(port: u16, address: impl Into<IpAddr>) -> io::Result<bool> {
+    let address = address.into();
     Ok(listeners()?.iter().any(|r| overlaps(r, port, address)))
 }
 /// Readiness requires our exact binding AND no overlapping foreign listener.
 /// In particular, an owned 0.0.0.0 socket must not trust another PID's /health
 /// response on 127.0.0.1 at the same port.
-pub fn owns_listener(pid: u32, port: u16, address: std::net::Ipv4Addr) -> bool {
+pub fn owns_listener(pid: u32, port: u16, address: impl Into<IpAddr>) -> bool {
+    let address = address.into();
     let Ok(rows) = listeners() else {
         return false;
     };
-    rows.iter().any(|r| {
-        r.pid == pid && r.port == port && r.address == u32::from_ne_bytes(address.octets())
-    }) && !rows
-        .iter()
-        .any(|r| r.pid != pid && overlaps(r, port, address))
+    rows.iter()
+        .any(|r| r.pid == pid && r.port == port && r.address == address)
+        && !rows
+            .iter()
+            .any(|r| r.pid != pid && overlaps(r, port, address))
 }
 
 pub fn error_dialog(message: &str) {

@@ -5,6 +5,8 @@ const { spawn } = require('node:child_process');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const http = require('node:http');
+const os = require('node:os');
+const hostCases = require('../tests/host-cases.json');
 const { chromium } = require('../.tools/qa/node_modules/playwright');
 if (process.env.CI !== 'true') throw new Error('Settings integration requires a disposable CI Windows profile.');
 const exe = path.resolve(__dirname, '../src-tauri/target/debug/bif-app.exe');
@@ -34,7 +36,7 @@ async function start() {
   settingsPage = await until(() => browser.contexts().flatMap((c) => c.pages()).find((p) => p.url().endsWith('/settings.html')), 'Settings window');
   settingsPage.on('pageerror', (error) => errors.push(error.message));
   await until(() => settingsPage.locator('#save').isEnabled(), 'Settings ready');
-  dashboard = await until(() => browser.contexts().flatMap((c) => c.pages()).find((p) => p.url().startsWith('http://127.0.0.1:')), 'Original Bifrost window');
+  dashboard = await until(() => browser.contexts().flatMap((c) => c.pages()).find((p) => p !== settingsPage && p.url().startsWith('http://') && !p.url().includes('tauri.localhost')), 'Original Bifrost window');
 }
 async function stop() {
   if (host && !exited(host)) { host.kill(); await until(() => exited(host), 'Host exits', 10000); }
@@ -60,7 +62,21 @@ async function screenshot(name) { await settingsPage.screenshot({ path: path.joi
     await start();
     const original = { host: await settingsPage.locator('#host').inputValue(), preferred: await settingsPage.locator('#port').inputValue(), auto: await settingsPage.locator('#auto-port').isChecked() };
     assert.equal(original.host, '127.0.0.1');
+    assert.equal(await settingsPage.locator('#host').getAttribute('placeholder'), '127.0.0.1');
+    assert.equal(await settingsPage.locator('#host').getAttribute('type'), 'text');
     await screenshot('initial');
+    for (const value of hostCases.invalid) {
+      await settingsPage.locator('#host').fill(value);
+      assert(await settingsPage.locator('#save').isDisabled(), `Invalid host enabled Save: ${value}`);
+      assert(await settingsPage.locator('#host-error').isVisible());
+    }
+    await screenshot('invalid-host');
+    for (const value of hostCases.valid) {
+      await settingsPage.locator('#host').fill(value);
+      assert(await settingsPage.locator('#save').isEnabled(), `Valid host rejected: ${value}`);
+      assert(await settingsPage.locator('#host-error').isHidden());
+    }
+    await settingsPage.locator('#host').fill(original.host);
     const denied = await dashboard.evaluate(async () => {
       try { await window.__TAURI__.core.invoke('get_desktop_settings'); return false; }
       catch { return true; }
@@ -97,9 +113,7 @@ async function screenshot(name) { await settingsPage.screenshot({ path: path.joi
     assert.equal(await port(), actual);
     assert.equal(await settingsPage.locator('#port').inputValue(), String(occupied));
 
-    await settingsPage.locator('#host').selectOption('0.0.0.0');
-    assert(await settingsPage.locator('#save').isDisabled());
-    await settingsPage.locator('#allow-lan').check();
+    await settingsPage.locator('#host').fill('0.0.0.0');
     await save();
     const lanPort = await port();
     assert.notEqual(lanPort, occupied, 'Wildcard bind must not share an unowned localhost listener');
@@ -115,7 +129,27 @@ async function screenshot(name) { await settingsPage.screenshot({ path: path.joi
     await screenshot('lan-dark');
     await settingsPage.emulateMedia({ colorScheme: 'light' });
 
-    await settingsPage.locator('#host').selectOption(original.host);
+    const nic = Object.values(os.networkInterfaces()).flat().find((entry) => entry && !entry.internal && entry.family === 'IPv4');
+    assert(nic, 'Windows runner has a usable assigned IPv4 address');
+    for (const hostValue of ['localhost', '127.0.0.2', '::1', nic.address]) {
+      await settingsPage.locator('#host').fill(hostValue);
+      await save();
+      const api = await settingsPage.locator('#current-url').textContent();
+      const ui = api.replace(/\/v1$/, '');
+      assert.equal(new URL(api).hostname, hostValue === 'localhost' ? '127.0.0.1' : hostValue === '::1' ? '[::1]' : hostValue);
+      assert.equal((await fetch(`${ui}/health`)).status, 200);
+      assert(Array.isArray((await (await fetch(`${api}/models`)).json()).data));
+      await until(() => dashboard.url().startsWith(`${ui}/`), 'Dashboard follows custom IP');
+      assert.equal(await dashboard.title(), 'Bifrost');
+      await screenshot(hostValue === nic.address ? 'custom-nic' : hostValue === '::1' ? 'ipv6' : 'custom-host');
+    }
+    const persistedHost = await settingsPage.locator('#host').inputValue();
+    const persistedApi = await settingsPage.locator('#current-url').textContent();
+    await stop();
+    await start();
+    assert.equal(await settingsPage.locator('#host').inputValue(), persistedHost);
+    assert.equal(await settingsPage.locator('#current-url').textContent(), persistedApi);
+    await settingsPage.locator('#host').fill(original.host);
     await settingsPage.locator('#port').fill(original.preferred);
     await settingsPage.locator('#auto-port').setChecked(original.auto);
     await save();
@@ -127,7 +161,7 @@ async function screenshot(name) { await settingsPage.screenshot({ path: path.joi
     assert(!dashboard.isClosed());
     assert.equal((await fetch(`http://127.0.0.1:${restored}/health`)).status, 200);
     assert.deepEqual(errors, []);
-    console.log('PASS: isolated native Settings WebView, IPC denied to original UI, validation, rollback, fallback, preference persistence, restart, LAN consent, loopback UI, light/dark/minimum layout, independent close');
+    console.log('PASS: isolated native Settings WebView, IPC denied to original UI, validation, rollback, fallback, preference persistence, restart, custom IPv4/IPv6/localhost validation, assigned NIC and persisted endpoint navigation, light/dark/minimum layout, independent close');
     await stop();
     await until(async () => { try { await fetch(`http://127.0.0.1:${restored}/health`, { signal: AbortSignal.timeout(1000) }); return false; } catch { return true; } }, 'Owned sidecar cleaned after QA');
   } finally {

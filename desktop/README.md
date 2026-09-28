@@ -39,11 +39,12 @@ Use Bifrost's normal provider/model naming. No client configuration is modified.
 Choose **Desktop Settings…** from the system tray to open a small, separate
 desktop window. The original Bifrost UI and its Settings pages are unchanged.
 
-- **监听地址 / Listen address**: defaults to `127.0.0.1` (this computer only).
-  You can explicitly choose `0.0.0.0` (all IPv4 interfaces) and acknowledge the
-  LAN access notice. Other devices may then reach both the gateway and management
-  UI, subject to Windows firewall/network policy. Configure suitable authentication
-  in the original Bifrost UI first. No firewall rule is added automatically.
+- **监听地址 / Listen address**: a text field with default value and placeholder
+  `127.0.0.1`. Enter an IPv4 address, an IPv6 literal (without URL brackets or a
+  zone identifier), or `localhost`. Invalid input shows an inline error and
+  disables Save; the Rust host independently validates before stopping anything.
+  `localhost` always binds to `127.0.0.1`, without DNS resolution. An address that
+  cannot be bound on this computer fails clearly and triggers rollback.
 - **首选端口 / Preferred port**: any port from 1 to 65535. The optional automatic
   fallback tries the following 100 ports, wrapping after 65535. Turn it off to
   require the exact port. Occupied services are never killed or reused.
@@ -54,8 +55,11 @@ desktop window. The original Bifrost UI and its Settings pages are unchanged.
   API requests are briefly interrupted. Failed startup or state persistence triggers
   an attempt to restore the previous settings, with a clear error if recovery fails.
 
-The main window and tray API URL always use `127.0.0.1` and the actual port, even
-in LAN mode; other devices use this computer's LAN IP instead of `0.0.0.0`.
+The main window, health checks and tray API URL follow the actual address and
+port. Wildcard `0.0.0.0` uses `127.0.0.1` for desktop access; `::` uses `::1`.
+IPv6 API URLs include brackets. When using a non-loopback address, configure
+appropriate authentication in the original Bifrost UI; other devices may reach
+both the API and management UI. No firewall rule is added automatically.
 Closing Desktop Settings closes only that window. Only the bundled settings
 window has permission to read/apply desktop settings; the Bifrost WebView does not.
 
@@ -133,7 +137,8 @@ not by a desktop network updater.
 command construction, HTTP health, key creation/reuse and actual Windows
 Credential Manager), then real-sidecar smoke tests. No paid API is called.
 The settings smoke test also covers port changes, occupied-port and write-failure
-rollback, persisted preference versus actual port, LAN binding and cancellation.
+rollback, persisted preference versus actual port, custom IPv4/IPv6/localhost,
+unassigned-address rollback and cancellation.
 `scripts/settings-smoke.cjs` runs in a disposable Windows CI profile against a
 debug host and its actual WebView. The debug-only `--test-settings-window` flag
 opens the same window as the tray entry; release builds do not expose this flag.

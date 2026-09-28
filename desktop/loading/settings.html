@@ -17,15 +17,8 @@
     <form id="settings-form">
       <fieldset id="fields" disabled>
         <label for="host">监听地址</label>
-        <select id="host" data-testid="desktop-host">
-          <option value="127.0.0.1">仅本机 · 127.0.0.1</option>
-          <option value="0.0.0.0">局域网 · 0.0.0.0（所有 IPv4 网卡）</option>
-        </select>
-        <div id="lan-warning" class="warning" hidden>
-          <p>同一网络的设备可能访问 Gateway 和 Bifrost 管理界面。启用前，请在原 Bifrost UI 中配置适当的认证。</p>
-          <p>桌面窗口仍使用 127.0.0.1。其他设备需使用此电脑的局域网 IP；应用不会自动修改 Windows 防火墙。</p>
-          <label class="check"><input id="allow-lan" type="checkbox" data-testid="desktop-lan-confirm">我了解并允许局域网访问</label>
-        </div>
+        <input id="host" type="text" value="127.0.0.1" placeholder="127.0.0.1" required spellcheck="false" autocapitalize="off" autocomplete="off" data-testid="desktop-host" aria-describedby="host-error">
+        <small id="host-error" class="error" aria-live="polite" hidden></small>
         <label for="port">首选端口</label>
         <input id="port" type="number" min="1" max="65535" step="1" required inputmode="numeric" data-testid="desktop-port" aria-describedby="port-help">
         <small id="port-help">有效范围 1–65535。首次启动默认使用 8080。</small>
