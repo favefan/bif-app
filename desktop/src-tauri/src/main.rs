@@ -167,6 +167,6 @@ fn main() {
         .build(tauri::generate_context!());
     match result {
         Ok(app) => app.run(move |handle, event| { if let tauri::RunEvent::ExitRequested { api, .. } = event { if !runtime.quitting.load(Ordering::SeqCst) { api.prevent_exit(); quit(handle, &runtime); } } }),
-        Err(e) => platform::error_dialog(&format!("bif-app could not start: {e}\nKeep the portable ZIP contents together, including the WebView2 folder."))
+        Err(e) => platform::error_dialog(&format!("bif-app could not start: {e}\nKeep the portable ZIP contents together. This build needs an installed Microsoft WebView2 runtime, or the optional with-webview2 package."))
     }
 }

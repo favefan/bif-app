@@ -15,8 +15,12 @@ This is not a new gateway or a second configuration system.
 Download `bif-app-windows-x64-portable.zip` and `SHA256SUMS.txt` from the GitHub
 pre-release or the **Desktop Windows** Actions artifact. Extract the entire ZIP
 to a writable local folder, then double-click **bif-app.exe**. Keep its sidecar
-and `WebView2` folder together. No terminal, Docker, development tools, cloud
-account or separately installed Bifrost is needed. Windows 10/11 x86_64 only.
+with the application. This standard, smaller ZIP uses the Microsoft WebView2
+Evergreen runtime already installed on your PC. An optional
+`bif-app-windows-x64-portable-with-webview2.zip` can carry the runtime for offline
+machines; keep its `WebView2` folder together with the executables. No terminal,
+Docker, development tools, cloud account or separately installed Bifrost is
+needed. Windows 10/11 x86_64 only.
 The alpha is unsigned; no certificate or installer is required for this phase.
 
 Wait for startup to finish: the window opens the original Bifrost UI after
@@ -89,7 +93,9 @@ for desktop release builds. Release creates the portable ZIP and SHA256 in
 `desktop/dist/`. `COMMIT.txt` identifies the source commit for host and gateway.
 `package` repackages an already-built release; it does not compile stale sources.
 
-The portable ZIP carries an official Microsoft fixed WebView2 runtime. Its
+To also package an official Microsoft fixed WebView2 runtime, use
+`./desktop/scripts/build.ps1 package -IncludeWebView2`. The default ZIP uses the
+installed runtime and omits that download. The optional runtime's
 download version and checksum are pinned in `scripts/webview.ps1`; update them
 together after verification. This runtime is serviced by publishing a new ZIP,
 not by a desktop network updater.

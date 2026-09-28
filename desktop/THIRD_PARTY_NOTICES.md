@@ -10,7 +10,7 @@ Exact versions, sources and integrity checksums are in src-tauri/Cargo.lock.
 Credential storage uses the Windows Credential Manager API directly; no
 third-party secret storage service is involved.
 
-The portable package includes Microsoft's unmodified WebView2 Fixed Version
+The optional `with-webview2` portable package includes Microsoft's unmodified WebView2 Fixed Version
 Runtime. This component is proprietary Microsoft software, distributed under
 the Microsoft Edge WebView2 Runtime redistribution terms, not Apache-2.0.
 Its license and third-party notices are preserved in the WebView2 directory.

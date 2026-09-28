@@ -1,4 +1,4 @@
-param([ValidateSet('sidecar','debug','release','test','package')][string]$Target = 'release')
+param([ValidateSet('sidecar','debug','release','test','package')][string]$Target = 'release', [switch]$IncludeWebView2)
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 $repo = (Resolve-Path "$PSScriptRoot/../..").Path
@@ -52,5 +52,5 @@ try {
         Copy-Item "$desktop/src-tauri/binaries/bifrost-http.exe" "$desktop/src-tauri/target/$Target/bifrost-http.exe" -Force
         if ($Target -eq 'debug') { return }
     }
-    & "$PSScriptRoot/package.ps1"
+    & "$PSScriptRoot/package.ps1" -IncludeWebView2:$IncludeWebView2
 } finally { Pop-Location }
