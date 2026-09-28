@@ -270,4 +270,7 @@ export const PROVIDER_SUPPORTED_REQUESTS: Record<BaseProvider, string[]> = {
 };
 
 export const IS_ENTERPRISE = process.env.BIFROST_IS_ENTERPRISE === "true";
+// bif-app: compile-time desktop presentation toggle; it must not change Enterprise behavior.
+const DESKTOP_HIDE_ENTERPRISE_UI = process.env.BIFROST_DESKTOP_HIDE_ENTERPRISE_UI === "true";
+export const HIDE_ENTERPRISE_UI = !IS_ENTERPRISE && DESKTOP_HIDE_ENTERPRISE_UI;
 export const TRIAL_EXPIRY = parseTrialExpiry(process.env.BIFROST_ENTERPRISE_TRIAL_EXPIRY);

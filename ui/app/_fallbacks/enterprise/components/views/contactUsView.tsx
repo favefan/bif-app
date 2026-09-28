@@ -1,4 +1,5 @@
 import { Button } from "@/components/ui/button";
+import { HIDE_ENTERPRISE_UI } from "@/lib/constants/config";
 import { cn } from "@/lib/utils";
 import { ArrowUpRight } from "lucide-react";
 
@@ -13,6 +14,23 @@ interface Props {
 }
 
 export default function ContactUsView({ icon, title, description, className, readmeLink, align = "middle", testIdPrefix }: Props) {
+	if (HIDE_ENTERPRISE_UI) {
+		// bif-app: desktop keeps direct routes available without marketing copy or external CTAs.
+		return (
+			<div
+				className={cn("flex flex-col items-center gap-4 text-center", align === "middle" ? "justify-center" : "justify-start", className)}
+			>
+				<div className="text-muted-foreground">{icon}</div>
+				<p
+					className="text-muted-foreground text-sm"
+					data-testid={testIdPrefix ? `${testIdPrefix}-unavailable` : "enterprise-feature-unavailable"}
+				>
+					This feature is unavailable in the desktop application.
+				</p>
+			</div>
+		);
+	}
+
 	return (
 		<div className={cn("flex flex-col items-center gap-4 text-center", align === "middle" ? "justify-center" : "justify-start", className)}>
 			<div className="text-muted-foreground">{icon}</div>

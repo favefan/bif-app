@@ -1,4 +1,5 @@
 import PageTitle from "@/components/pageTitle";
+import { HIDE_ENTERPRISE_UI } from "@/lib/constants/config";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -15,7 +16,8 @@ export default function FeatureFlagsView() {
 	const { data, isLoading, isError, error } = useListFeatureFlagsQuery();
 	const [updateFeatureFlag] = useUpdateFeatureFlagMutation();
 
-	const flags = data?.flags ?? [];
+	// bif-app: presentation-only view of server data; mutations and permissions are unchanged.
+	const flags = (data?.flags ?? []).filter((flag) => !(HIDE_ENTERPRISE_UI && flag.enterprise_only));
 
 	async function handleToggle(flag: FeatureFlagStatus, checked: boolean) {
 		try {

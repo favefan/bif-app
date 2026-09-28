@@ -7,6 +7,7 @@ import { ProviderSelector } from "@/components/ui/providerSelector";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useDebouncedValue } from "@/hooks/useDebounce";
+import { HIDE_ENTERPRISE_UI } from "@/lib/constants/config";
 import { resolveProviderIconKey } from "@/lib/constants/icons";
 import { getProviderLabel } from "@/lib/constants/logs";
 import { useGetVirtualKeysQuery } from "@/lib/store";
@@ -296,7 +297,8 @@ export function SettingsPanel() {
 							</div>
 						</AccordionContent>
 					</AccordionItem>
-					{selectedPromptId && <PromptDeploymentsAccordionItem activeSection={openSection} />}
+					{/* bif-app: usePromptContext above remains unconditional; only the fallback deployment upsell is hidden. */}
+					{selectedPromptId && !HIDE_ENTERPRISE_UI && <PromptDeploymentsAccordionItem activeSection={openSection} />}
 				</Accordion>
 			</div>
 		</div>

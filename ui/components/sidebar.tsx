@@ -74,7 +74,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { HIDDEN_UNTIL_NAV_COOKIE, REMIND_LATER_COOKIE, useOnboardingChecklist } from "@/hooks/useOnboardingChecklist";
 import { useFeatureFlag } from "@/hooks/useFeatureFlag";
 import { useWebSocket } from "@/hooks/useWebSocket";
-import { IS_ENTERPRISE } from "@/lib/constants/config";
+import { HIDE_ENTERPRISE_UI, IS_ENTERPRISE } from "@/lib/constants/config";
 import { FEATURE_FLAGS } from "@/lib/constants/featureFlags";
 import { useBranding } from "@/lib/hooks/useBranding";
 import { useGetCoreConfigQuery, useGetLatestReleaseQuery, useGetVersionQuery } from "@/lib/store";
@@ -148,6 +148,8 @@ interface SidebarItem {
 	description: string;
 	isAllowed?: boolean;
 	hasAccess: boolean;
+	// bif-app: audited upgrade-placeholder navigation only; permissions remain independent.
+	enterpriseOnly?: boolean;
 	subItems?: SidebarItem[];
 	tag?: string;
 	new?: boolean;
@@ -635,7 +637,7 @@ export default function AppSidebar() {
 		removeCookie(REMIND_LATER_COOKIE, { path: "/" });
 	}, [removeCookie]);
 
-	const items = useMemo(
+	const items = useMemo<SidebarItem[]>(
 		() => [
 			...(IS_ENTERPRISE
 				? [
@@ -739,6 +741,7 @@ export default function AppSidebar() {
 						url: "/workspace/circuit-breaker",
 						icon: CircuitBoard,
 						description: "Automatic fallback when primary endpoints fail",
+						enterpriseOnly: true,
 						hasAccess: hasCircuitBreakerAccess,
 					},
 					{
@@ -821,6 +824,7 @@ export default function AppSidebar() {
 				url: "/workspace/alerting",
 				icon: Siren,
 				description: "Manage alert channels, rules, and history",
+				enterpriseOnly: true,
 				hasAccess: hasAlertingAccess,
 				subItems: [
 					{
@@ -828,6 +832,7 @@ export default function AppSidebar() {
 						url: "/workspace/alerting/channels",
 						icon: Megaphone,
 						description: "Configure notification channels",
+						enterpriseOnly: true,
 						hasAccess: hasAlertingAccess,
 					},
 					{
@@ -835,6 +840,7 @@ export default function AppSidebar() {
 						url: "/workspace/alerting/rules",
 						icon: Gavel,
 						description: "Define alerting rules",
+						enterpriseOnly: true,
 						hasAccess: hasAlertingAccess,
 					},
 					{
@@ -842,6 +848,7 @@ export default function AppSidebar() {
 						url: "/workspace/alerting/history",
 						icon: History,
 						description: "Review alert delivery history",
+						enterpriseOnly: true,
 						hasAccess: hasAlertingAccess,
 					},
 				],
@@ -865,6 +872,7 @@ export default function AppSidebar() {
 						url: "/workspace/governance/users",
 						icon: Users,
 						description: "Manage users",
+						enterpriseOnly: true,
 						hasAccess: hasUsersAccess,
 					},
 					{
@@ -879,6 +887,7 @@ export default function AppSidebar() {
 						url: "/workspace/governance/business-units",
 						icon: Building2,
 						description: "Manage business units",
+						enterpriseOnly: true,
 						hasAccess: hasBusinessUnitsAccess,
 					},
 					{
@@ -893,6 +902,7 @@ export default function AppSidebar() {
 						url: "/workspace/scim",
 						icon: BookUser,
 						description: "User management and provisioning",
+						enterpriseOnly: true,
 						hasAccess: hasUserProvisioningAccess,
 					},
 					{
@@ -900,6 +910,7 @@ export default function AppSidebar() {
 						url: "/workspace/governance/rbac",
 						icon: UserRoundCheck,
 						description: "User roles and permissions",
+						enterpriseOnly: true,
 						hasAccess: hasRbacAccess,
 					},
 					{
@@ -907,6 +918,7 @@ export default function AppSidebar() {
 						url: "/workspace/governance/access-profiles",
 						icon: ShieldCheck,
 						description: "Manage access profiles for roles",
+						enterpriseOnly: true,
 						hasAccess: hasAccessProfilesAccess,
 					},
 					{
@@ -914,6 +926,7 @@ export default function AppSidebar() {
 						url: "/workspace/governance/projects",
 						icon: SquareKanban,
 						description: "Scope requests to a project's access and budget",
+						enterpriseOnly: true,
 						hasAccess: hasProjectsAccess,
 					},
 					{
@@ -921,6 +934,7 @@ export default function AppSidebar() {
 						url: "/workspace/audit-logs",
 						icon: ScrollText,
 						description: "Audit logs and compliance",
+						enterpriseOnly: true,
 						hasAccess: hasAuditLogsAccess,
 					},
 				],
@@ -930,6 +944,7 @@ export default function AppSidebar() {
 				url: "/workspace/guardrails",
 				icon: Construction,
 				description: "Guardrails configuration",
+				enterpriseOnly: true,
 				hasAccess: hasGuardrailsConfigAccess || hasGuardrailsProvidersAccess,
 				subItems: [
 					{
@@ -937,6 +952,7 @@ export default function AppSidebar() {
 						url: "/workspace/guardrails/configuration",
 						icon: SearchCheck,
 						description: "Guardrail rules",
+						enterpriseOnly: true,
 						hasAccess: hasGuardrailsConfigAccess,
 					},
 					{
@@ -944,6 +960,7 @@ export default function AppSidebar() {
 						url: "/workspace/guardrails/providers",
 						icon: Boxes,
 						description: "Guardrail providers configuration",
+						enterpriseOnly: true,
 						hasAccess: hasGuardrailsProvidersAccess,
 					},
 				],
@@ -960,6 +977,7 @@ export default function AppSidebar() {
 				icon: Hexagon,
 				description: "Edge device management",
 				url: "/workspace/edge-control",
+				enterpriseOnly: true,
 				hasAccess: hasAnyEdgeControlAccess,
 				subItems: [
 					{
@@ -967,6 +985,7 @@ export default function AppSidebar() {
 						url: "/workspace/edge-control/devices",
 						icon: LaptopMinimalCheck,
 						description: "Manage edge devices",
+						enterpriseOnly: true,
 						hasAccess: hasDevicesAccess,
 					},
 					{
@@ -974,6 +993,7 @@ export default function AppSidebar() {
 						url: "/workspace/edge-control/inventory",
 						icon: BadgeCheck,
 						description: "Approve apps and MCP servers",
+						enterpriseOnly: true,
 						hasAccess: hasInventoryAccess,
 					},
 					{
@@ -981,6 +1001,7 @@ export default function AppSidebar() {
 						url: "/workspace/edge-control/config",
 						icon: Settings,
 						description: "Edge settings",
+						enterpriseOnly: true,
 						hasAccess: hasEdgeConfigAccess,
 					},
 				],
@@ -990,6 +1011,7 @@ export default function AppSidebar() {
 				url: "/workspace/cluster",
 				icon: Network,
 				description: "Manage Bifrost cluster",
+				enterpriseOnly: true,
 				hasAccess: hasClusterConfigAccess,
 			},
 			{
@@ -997,6 +1019,7 @@ export default function AppSidebar() {
 				url: "/workspace/adaptive-routing",
 				icon: Shuffle,
 				description: "Manage adaptive routing",
+				enterpriseOnly: true,
 				hasAccess: isAdaptiveRoutingAllowed,
 				subItems: [
 					{
@@ -1004,6 +1027,7 @@ export default function AppSidebar() {
 						url: "/workspace/adaptive-routing",
 						icon: ChartColumnBig,
 						description: "Adaptive routing metrics",
+						enterpriseOnly: true,
 						hasAccess: isAdaptiveRoutingAllowed,
 					},
 					{
@@ -1011,6 +1035,7 @@ export default function AppSidebar() {
 						url: "/workspace/adaptive-routing/settings",
 						icon: Settings,
 						description: "Adaptive routing settings",
+						enterpriseOnly: true,
 						hasAccess: isAdaptiveRoutingAllowed,
 					},
 				],
@@ -1172,11 +1197,13 @@ export default function AppSidebar() {
 	);
 
 	const accessibleItems: SidebarItem[] = useMemo(() => {
+		// bif-app: presentation filtering precedes search and keyboard derivation; RBAC stays unchanged.
 		return items
+			.filter((item) => !(HIDE_ENTERPRISE_UI && item.enterpriseOnly))
 			.map((item) => {
 				const hadSubItems = !!item.subItems?.length;
 				if (hadSubItems) {
-					const visibleSubItems = item.subItems!.filter((sub) => sub.hasAccess !== false);
+					const visibleSubItems = item.subItems!.filter((sub) => sub.hasAccess !== false && !(HIDE_ENTERPRISE_UI && sub.enterpriseOnly));
 					if (visibleSubItems.length === 0) return null;
 					return { ...item, subItems: visibleSubItems, hasAccess: true };
 				}
@@ -1450,7 +1477,7 @@ export default function AppSidebar() {
 			});
 		}
 		// Only show after mounted to ensure cookie is properly hydrated and avoid flash
-		if (!IS_ENTERPRISE && mounted && !isProductionSetupDismissed) {
+		if (!IS_ENTERPRISE && !HIDE_ENTERPRISE_UI && mounted && !isProductionSetupDismissed) {
 			cards.push(productionSetupHelpCard);
 		}
 		return cards;

@@ -46,6 +46,8 @@ export default defineConfig({
 	define: {
 		"process.env.NODE_ENV": JSON.stringify(process.env.NODE_ENV ?? "production"),
 		"process.env.BIFROST_IS_ENTERPRISE": JSON.stringify(isEnterpriseBuild ? "true" : "false"),
+		// bif-app: desktop build may opt into presentation-only Enterprise placeholder suppression.
+		"process.env.BIFROST_DESKTOP_HIDE_ENTERPRISE_UI": JSON.stringify(process.env.BIFROST_DESKTOP_HIDE_ENTERPRISE_UI ?? "false"),
 		"process.env.BIFROST_DISABLE_PROFILER": JSON.stringify(process.env.BIFROST_DISABLE_PROFILER ?? ""),
 		"process.env.BIFROST_ENTERPRISE_TRIAL_EXPIRY": JSON.stringify(process.env.ENTERPRISE_TRIAL_EXPIRY ?? ""),
 		"process.env.BIFROST_PORT": JSON.stringify(process.env.BIFROST_PORT ?? ""),

@@ -1,5 +1,6 @@
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { HIDE_ENTERPRISE_UI } from "@/lib/constants/config";
 import { useGetCoreConfigQuery } from "@/lib/store";
 import { useCopyToClipboard } from "@/hooks/useCopyToClipboard";
 import { Link } from "@tanstack/react-router";
@@ -92,13 +93,16 @@ curl --location 'http://localhost:8080/v1/chat/completions'
 				</AlertDescription>
 			</Alert>
 
-			<ContactUsView
-				className="mt-4 rounded-md border px-3 py-8"
-				icon={<KeyRound size={48} />}
-				title="Scope Based API Keys"
-				description="Need granular access control with scope-based API keys? Enterprise customers can create multiple API keys with specific permissions for different services, teams, or environments."
-				readmeLink="https://docs.getbifrost.io/enterprise/api-keys"
-			/>
+			{!HIDE_ENTERPRISE_UI && (
+				// bif-app: retain OSS auth guidance but omit only this promotional subsection.
+				<ContactUsView
+					className="mt-4 rounded-md border px-3 py-8"
+					icon={<KeyRound size={48} />}
+					title="Scope Based API Keys"
+					description="Need granular access control with scope-based API keys? Enterprise customers can create multiple API keys with specific permissions for different services, teams, or environments."
+					readmeLink="https://docs.getbifrost.io/enterprise/api-keys"
+				/>
+			)}
 		</div>
 	);
 }

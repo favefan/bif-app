@@ -1,4 +1,5 @@
 import FullPageLoader from "@/components/fullPageLoader";
+import { HIDE_ENTERPRISE_UI } from "@/lib/constants/config";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -108,7 +109,13 @@ export default function ObservabilityView() {
 	const { resolvedTheme } = useTheme();
 	const [mobileDetailOpen, setMobileDetailOpen] = useState(false);
 
-	const supportedPlatforms = useMemo(() => supportedPlatformsList(resolvedTheme || "light"), [resolvedTheme]);
+	// bif-app: hide only audited Enterprise connector selectors, preserving direct query routes.
+	const supportedPlatforms = useMemo(() => {
+		const platforms = supportedPlatformsList(resolvedTheme || "light");
+		return HIDE_ENTERPRISE_UI
+			? platforms.filter((platform) => !["datadog", "bigquery", "kafka", "pubsub", "splunk"].includes(platform.id))
+			: platforms;
+	}, [resolvedTheme]);
 
 	// Map UI tab IDs to actual plugin names (prometheus tab uses telemetry plugin)
 	const getPluginNameForTab = (tabId: string) => (tabId === "prometheus" ? "telemetry" : tabId);
