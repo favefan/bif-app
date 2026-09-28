@@ -2,7 +2,7 @@ name: Desktop Windows
 on:
   workflow_dispatch:
   push:
-    branches: [feat/tauri-desktop]
+    branches: [main]
     paths: ['desktop/**', '.github/workflows/desktop-windows.yml', 'transports/**', 'core/**', 'framework/**', 'plugins/**', 'ui/**']
   pull_request:
     paths: ['desktop/**', '.github/workflows/desktop-windows.yml']

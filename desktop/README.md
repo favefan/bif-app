@@ -112,6 +112,11 @@ See [VALIDATION.md](VALIDATION.md) for the exact checks and native tray test.
 
 ## Upstream maintenance
 
+`main` is bif-app's default and integration branch. `origin` points to this fork;
+`upstream` points to `maximhq/bifrost`, whose integration branch is `dev`.
+The fork does not maintain a separate `origin/dev` mirror. Start feature/fix
+branches from `main` and merge them back into `main`.
+
 The root [`AGENTS.md`](../AGENTS.md) makes these rules mandatory for future agents:
 
 1. Keep every necessary upstream source change minimal and in its own commit,
@@ -126,11 +131,13 @@ Published commits and release tags are not rewritten just to reorganize history.
 
 ```powershell
 git remote add upstream https://github.com/maximhq/bifrost.git
+git switch main
 git fetch upstream
 git merge upstream/dev
 ./desktop/scripts/build.ps1 release
 ./desktop/scripts/build.ps1 test
 go build -o desktop/dist/bifrost-server-check.exe ./transports/bifrost-http
+git push origin main
 ```
 
 Add the remote only when it does not already exist. Keep desktop changes in

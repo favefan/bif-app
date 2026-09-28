@@ -12,6 +12,12 @@ integration. Maintain necessary upstream changes directly as Git commits in this
 fork; do not introduce a build-time `.patch` application layer or duplicate the
 upstream source, UI, API, or business configuration.
 
+The fork's default/integration branch is `main`, tracked as `origin/main`.
+Upstream Bifrost is tracked independently as `upstream/dev`. Synchronize by
+switching to `main`, fetching `upstream`, and merging `upstream/dev`; there is
+no `origin/dev` mirror to update or recreate. Create future `feat/*` and `fix/*`
+branches from `main` and target `main` when merging them back.
+
 All agents working on this fork MUST follow these three rules:
 
 1. **Isolate each necessary upstream source change in a small, separate commit.**

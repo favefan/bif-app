@@ -8,6 +8,10 @@ See [the portable Windows desktop guide](desktop/README.md) for downloads, local
 credentials, development and upstream synchronization. The original Bifrost UI and
 gateway remain the application; upstream documentation continues below.
 
+This fork is maintained on `main`. Bifrost updates are merged from `upstream/dev`;
+no separate `origin/dev` mirror is required. See the root [AGENTS.md](AGENTS.md)
+for mandatory fork maintenance rules.
+
 <a href="https://trendshift.io/repositories/14529?utm_source=repository-badge&amp;utm_medium=badge&amp;utm_campaign=badge-repository-14529" target="_blank" rel="noopener noreferrer"><img src="https://trendshift.io/api/badge/repositories/14529" alt="maximhq%2Fbifrost | Trendshift" width="250" height="55"/></a>
 
 [![Discord badge](https://img.shields.io/badge/Discord-Join%20Community-5865F2?logo=discord&logoColor=white)](https://discord.gg/exN5KAydbU)
