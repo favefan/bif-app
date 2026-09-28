@@ -11,6 +11,7 @@ const exe = path.resolve(__dirname, '../src-tauri/target/debug/bif-app.exe');
 const evidence = path.resolve(__dirname, '../test-results');
 let host, browser, settingsPage, dashboard, blocker;
 const errors = [];
+const exited = (process) => process.exitCode !== null || process.signalCode !== null;
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 async function until(fn, description, ms = 120000) {
   const deadline = Date.now() + ms;
@@ -27,7 +28,7 @@ async function start() {
   }});
   host.on('error', (error) => errors.push(error.message));
   browser = await until(async () => {
-    if (host.exitCode !== null) throw new Error(`Host exited: ${host.exitCode}`);
+    if (exited(host)) throw new Error(`Host exited: ${host.exitCode ?? host.signalCode}`);
     return chromium.connectOverCDP('http://127.0.0.1:9229');
   }, 'WebView debugging connection');
   settingsPage = await until(() => browser.contexts().flatMap((c) => c.pages()).find((p) => p.url().endsWith('/settings.html')), 'Settings window');
@@ -36,7 +37,11 @@ async function start() {
   dashboard = await until(() => browser.contexts().flatMap((c) => c.pages()).find((p) => p.url().startsWith('http://127.0.0.1:')), 'Original Bifrost window');
 }
 async function stop() {
-  if (host && host.exitCode === null) { host.kill(); await until(() => host.exitCode !== null, 'Host exits', 10000); }
+  if (host && !exited(host)) { host.kill(); await until(() => exited(host), 'Host exits', 10000); }
+  await until(async () => {
+    try { await fetch('http://127.0.0.1:9229/json/version', { signal: AbortSignal.timeout(500) }); return false; }
+    catch { return true; }
+  }, 'Previous test WebView exits', 15000);
   browser = undefined;
 }
 async function port() { return Number((await settingsPage.locator('#current-url').textContent()).match(/:(\d+)\/v1/)[1]); }
