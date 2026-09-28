@@ -60,6 +60,10 @@ pub fn reserve_port(
     settings.validate().map_err(io::Error::other)?;
     let ports = settings.ports(preferred);
     for port in ports {
+        if crate::platform::port_in_use(port, settings.address())? {
+            let _responds_to_health = healthy(client, port);
+            continue;
+        }
         match TcpListener::bind((settings.address(), port)) {
             Ok(listener) => return Ok(listener),
             Err(_) => {
@@ -108,6 +112,9 @@ pub struct Gateway {
     host: Ipv4Addr,
 }
 impl Gateway {
+    pub fn owns_listener(&self) -> bool {
+        crate::platform::owns_listener(self.child.id(), self.port, self.host)
+    }
     pub fn spawn(
         exe: &Path,
         paths: &Paths,
@@ -175,13 +182,13 @@ impl Gateway {
                     "Bifrost exited during startup ({status}). See desktop/gateway.log."
                 ));
             }
-            if crate::platform::owns_listener(self.child.id(), self.port, self.host)
-                && healthy(client, self.port)
-            {
+            if self.owns_listener() && healthy(client, self.port) {
                 // Require our child to remain alive after the probe. Unknown listeners
                 // are never intentionally reused, including during bind races.
                 thread::sleep(Duration::from_millis(150));
-                if self.child.try_wait().map_err(|e| e.to_string())?.is_none() {
+                if self.child.try_wait().map_err(|e| e.to_string())?.is_none()
+                    && self.owns_listener()
+                {
                     return Ok(());
                 }
             }
@@ -536,6 +543,23 @@ mod tests {
         .unwrap();
         assert_eq!(crate::settings::read_state(&dir).unwrap().port, Some(p));
         fs::remove_dir_all(dir).unwrap();
+    }
+    #[test]
+    fn lan_binding_cannot_shadow_an_existing_localhost_service() {
+        let occupied = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+        let port = occupied.local_addr().unwrap().port();
+        let client = http_client().unwrap();
+        let mut config = Settings {
+            host: "0.0.0.0".into(),
+            preferred_port: port,
+            auto_port: false,
+        };
+        assert!(crate::platform::port_in_use(port, Ipv4Addr::UNSPECIFIED).unwrap());
+        assert!(reserve_port(&config, None, &client).is_err());
+        config.auto_port = true;
+        let selected = reserve_port(&config, None, &client).unwrap();
+        assert_ne!(selected.local_addr().unwrap().port(), port);
+        assert!(occupied.local_addr().is_ok());
     }
     #[test]
     fn health_checks_require_http_200() {

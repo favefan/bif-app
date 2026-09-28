@@ -25,13 +25,21 @@ pub fn test_id() -> String {
     )
 }
 
-/// Verify the listening socket is owned by our exact child PID before loading UI.
-/// A health response alone cannot distinguish an unrelated local service.
-pub fn owns_listener(pid: u32, port: u16, address: std::net::Ipv4Addr) -> bool {
-    use windows_sys::Win32::{NetworkManagement::IpHelper::*, Networking::WinSock::AF_INET};
+#[derive(Clone, Copy)]
+struct Listener {
+    pid: u32,
+    port: u16,
+    address: u32,
+}
+
+fn listeners() -> io::Result<Vec<Listener>> {
+    use windows_sys::Win32::{
+        Foundation::ERROR_INSUFFICIENT_BUFFER, NetworkManagement::IpHelper::*,
+        Networking::WinSock::AF_INET,
+    };
     unsafe {
         let mut size = 0;
-        GetExtendedTcpTable(
+        let status = GetExtendedTcpTable(
             ptr::null_mut(),
             &mut size,
             0,
@@ -39,27 +47,77 @@ pub fn owns_listener(pid: u32, port: u16, address: std::net::Ipv4Addr) -> bool {
             TCP_TABLE_OWNER_PID_LISTENER,
             0,
         );
-        let mut buffer = vec![0u64; (size as usize).div_ceil(8)];
-        if GetExtendedTcpTable(
-            buffer.as_mut_ptr().cast(),
-            &mut size,
-            0,
-            AF_INET as u32,
-            TCP_TABLE_OWNER_PID_LISTENER,
-            0,
-        ) != 0
-        {
-            return false;
+        if status != 0 && status != ERROR_INSUFFICIENT_BUFFER {
+            return Err(io::Error::from_raw_os_error(status as i32));
         }
-        let table = &*(buffer.as_ptr() as *const MIB_TCPTABLE_OWNER_PID);
-        std::slice::from_raw_parts(table.table.as_ptr(), table.dwNumEntries as usize)
+        for _ in 0..4 {
+            let mut buffer = vec![
+                0u64;
+                (size as usize)
+                    .max(mem::size_of::<MIB_TCPTABLE_OWNER_PID>())
+                    .div_ceil(8)
+            ];
+            let status = GetExtendedTcpTable(
+                buffer.as_mut_ptr().cast(),
+                &mut size,
+                0,
+                AF_INET as u32,
+                TCP_TABLE_OWNER_PID_LISTENER,
+                0,
+            );
+            if status == ERROR_INSUFFICIENT_BUFFER {
+                continue;
+            }
+            if status != 0 {
+                return Err(io::Error::from_raw_os_error(status as i32));
+            }
+            let table = &*(buffer.as_ptr() as *const MIB_TCPTABLE_OWNER_PID);
+            let needed = mem::offset_of!(MIB_TCPTABLE_OWNER_PID, table)
+                + table.dwNumEntries as usize * mem::size_of::<MIB_TCPROW_OWNER_PID>();
+            if needed > buffer.len() * 8 {
+                return Err(io::Error::other("Invalid Windows listener table size"));
+            }
+            return Ok(std::slice::from_raw_parts(
+                table.table.as_ptr(),
+                table.dwNumEntries as usize,
+            )
             .iter()
-            .any(|r| {
-                r.dwOwningPid == pid
-                    && u16::from_be(r.dwLocalPort as u16) == port
-                    && r.dwLocalAddr == u32::from_ne_bytes(address.octets())
+            .map(|r| Listener {
+                pid: r.dwOwningPid,
+                port: u16::from_be(r.dwLocalPort as u16),
+                address: r.dwLocalAddr,
             })
+            .collect());
+        }
+        Err(io::Error::other(
+            "Windows listener table changed during inspection",
+        ))
     }
+}
+fn overlaps(row: &Listener, port: u16, address: std::net::Ipv4Addr) -> bool {
+    row.port == port
+        && (address.is_unspecified()
+            || row.address == 0
+            || row.address == u32::from_ne_bytes(address.octets()))
+}
+/// Windows can accept a wildcard bind while a specific-address listener already
+/// owns that port. Such a listener can shadow localhost, so bind success alone
+/// is not sufficient evidence that a LAN port is available.
+pub fn port_in_use(port: u16, address: std::net::Ipv4Addr) -> io::Result<bool> {
+    Ok(listeners()?.iter().any(|r| overlaps(r, port, address)))
+}
+/// Readiness requires our exact binding AND no overlapping foreign listener.
+/// In particular, an owned 0.0.0.0 socket must not trust another PID's /health
+/// response on 127.0.0.1 at the same port.
+pub fn owns_listener(pid: u32, port: u16, address: std::net::Ipv4Addr) -> bool {
+    let Ok(rows) = listeners() else {
+        return false;
+    };
+    rows.iter().any(|r| {
+        r.pid == pid && r.port == port && r.address == u32::from_ne_bytes(address.octets())
+    }) && !rows
+        .iter()
+        .any(|r| r.pid != pid && overlaps(r, port, address))
 }
 
 pub fn error_dialog(message: &str) {

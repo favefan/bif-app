@@ -2,11 +2,14 @@
 
 ## Desktop Settings (alpha.2)
 
-The settings implementation adds eleven unit/helper tests in total and two
+The settings implementation has twelve unit/helper tests in total and two
 real-sidecar integration tests. Local Windows runs passed settings migration,
 validation, IPC origin checks, port changes, occupied-port rollback, automatic
 fallback with a preserved preference, process restart, state-write-failure
 rollback, explicit LAN binding, return to loopback, cancellation, and key reuse.
+The Windows wildcard-binding regression check rejects a port occupied on a
+specific local address even if a wildcard bind would otherwise succeed. Readiness
+also rejects overlapping listeners owned by another process.
 
 The Windows workflow additionally runs `scripts/settings-smoke.cjs` against the
 actual debug host/WebView in a disposable CI profile. It checks the separate

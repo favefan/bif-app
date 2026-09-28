@@ -101,6 +101,11 @@ async function screenshot(name) { await settingsPage.screenshot({ path: path.joi
     assert(await settingsPage.locator('#save').isDisabled());
     await settingsPage.locator('#allow-lan').check();
     await save();
+    const lanPort = await port();
+    assert.notEqual(lanPort, occupied, 'Wildcard bind must not share an unowned localhost listener');
+    const lanModels = await (await fetch(`http://127.0.0.1:${lanPort}/v1/models`)).json();
+    assert(Array.isArray(lanModels.data), 'LAN mode must still reach the owned Bifrost API');
+    await until(() => dashboard.url().startsWith(`http://127.0.0.1:${lanPort}/`), 'LAN-mode original UI follows actual port');
     assert((await settingsPage.locator('#current-bind').textContent()).includes('0.0.0.0:'));
     assert((await settingsPage.locator('#current-url').textContent()).includes('127.0.0.1:'));
     await settingsPage.setViewportSize({ width: 480, height: 580 });

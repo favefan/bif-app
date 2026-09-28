@@ -284,12 +284,16 @@ fn main() {
                     thread::sleep(Duration::from_secs(1));
                     if state.quitting.load(Ordering::SeqCst) { break; }
                     if state.busy.load(Ordering::SeqCst) { continue; }
-                    let exited = if let Ok(mut c) = state.controller.try_lock() {
+                    let stopped = if let Ok(mut c) = state.controller.try_lock() {
                         let exited = c.gateway.as_mut().and_then(|g| g.child.try_wait().ok().flatten()).is_some();
-                        if exited { let _ = c.stop(); *state.port.lock().unwrap() = None; }
-                        exited
+                        let lost_listener = c.gateway.as_ref().is_some_and(|g| !g.owns_listener());
+                        if exited || lost_listener { let _ = c.stop(); *state.port.lock().unwrap() = None; }
+                        exited || lost_listener
                     } else { false };
-                    if exited { fail(&handle, "Bifrost stopped unexpectedly. Open Desktop Settings to restart, or Quit and relaunch. See desktop/gateway.log."); }
+                    if stopped {
+                        let _ = navigate(&handle, None);
+                        fail(&handle, "Bifrost stopped or no longer exclusively owns its listening address. Open Desktop Settings to restart, or Quit and relaunch. See desktop/gateway.log.");
+                    }
                 }
             });
             Ok(())
