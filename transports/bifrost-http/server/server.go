@@ -2488,7 +2488,9 @@ func (s *BifrostHTTPServer) RegisterAPIRoutes(ctx context.Context, callbacks Ser
 	if s.WarpHandler != nil {
 		s.WarpHandler.Shutdown()
 	}
-	s.WarpHandler = handlers.NewWarpHandler(s.Config.ConfigStore, loggerPlugin, s.Client, s.Config.LogsStore, s.Config.VectorStore, s.SidekiqRunner, s.Config.ModelCatalog, logger, func() bool { return s.Config.FeatureFlags != nil && s.Config.FeatureFlags.IsEnabled(lib.FeatureFlagWarp) })
+	s.WarpHandler = handlers.NewWarpHandler(s.Config.ConfigStore, loggerPlugin, s.Client, s.Config.LogsStore, s.Config.VectorStore, s.SidekiqRunner, s.Config.ModelCatalog, logger, func() bool {
+		return s.Config.FeatureFlags != nil && s.Config.FeatureFlags.IsEnabled(lib.FeatureFlagWarp)
+	})
 	// Start WebSocket heartbeat
 	s.WebSocketHandler.StartHeartbeat()
 	// Adding telemetry middleware
@@ -3169,6 +3171,13 @@ func (s *BifrostHTTPServer) Bootstrap(ctx context.Context) error {
 // Start starts the HTTP server at the specified host and port
 // Also watches signals and errors
 func (s *BifrostHTTPServer) Start() error {
+	return s.StartWithShutdown(nil)
+}
+
+// StartWithShutdown is an opt-in lifecycle hook for an owning process such as
+// bif-app. Modified for bif-app; nil preserves the ordinary server lifecycle.
+// Closing shutdown follows exactly the same cleanup path as an OS signal.
+func (s *BifrostHTTPServer) StartWithShutdown(shutdown <-chan struct{}) error {
 	// Printing plugin status in a table
 	for _, pluginStatus := range s.Config.GetPluginStatus() {
 		logger.Info("plugin status: %s - %s", pluginStatus.Name, pluginStatus.Status)
@@ -3178,6 +3187,19 @@ func (s *BifrostHTTPServer) Start() error {
 	errChan := make(chan error, 1)
 	// Watching for signals
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+	defer signal.Stop(sigChan)
+	watchDone := make(chan struct{})
+	defer close(watchDone)
+	go func() {
+		select {
+		case <-shutdown:
+			select {
+			case sigChan <- os.Interrupt:
+			default:
+			}
+		case <-watchDone:
+		}
+	}()
 	// Start server in a goroutine
 	serverAddr := net.JoinHostPort(s.Host, s.Port)
 	ln, err := net.Listen("tcp", serverAddr)

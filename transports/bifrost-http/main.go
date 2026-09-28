@@ -56,6 +56,7 @@ import (
 	"embed"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"time"
@@ -77,6 +78,9 @@ var Version string
 
 var logger = bifrost.NewDefaultLogger(schemas.LogLevelInfo)
 var server *bifrostServer.BifrostHTTPServer
+
+// Modified for bif-app: optional parent-owned, console-free desktop lifecycle.
+var shutdownOnStdinClose bool
 
 // init initializes command line flags (but does not parse them).
 // Flag parsing is deferred to main() to avoid conflicts with test flags.
@@ -108,6 +112,7 @@ func init() {
 	flag.StringVar(&server.AppDir, "app-dir", bifrostServer.DefaultAppDir, "Application data directory (contains config.json and logs)")
 	flag.StringVar(&server.LogLevel, "log-level", defaultLogLevel, "Logger level (debug, info, warn, error). Default is info.")
 	flag.StringVar(&server.LogOutputStyle, "log-style", bifrostServer.DefaultLogOutputStyle, "Logger output type (json or pretty). Default is JSON.")
+	flag.BoolVar(&shutdownOnStdinClose, "shutdown-on-stdin-close", false, "Gracefully stop when the owning desktop process closes stdin")
 }
 
 // main is the entry point of the application.
@@ -157,7 +162,16 @@ func main() {
 		os.Exit(1)
 	}
 	logger.Info("Time spent in Bifrost server bootstrap %d ms", time.Since(t).Milliseconds())
-	err = server.Start()
+	var shutdown <-chan struct{}
+	if shutdownOnStdinClose {
+		done := make(chan struct{})
+		shutdown = done
+		go func() {
+			_, _ = io.Copy(io.Discard, os.Stdin)
+			close(done)
+		}()
+	}
+	err = server.StartWithShutdown(shutdown)
 	if err != nil {
 		logger.Error("failed to start server: %v", err)
 		os.Exit(1)

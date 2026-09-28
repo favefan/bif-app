@@ -1,0 +1,65 @@
+name: Desktop Windows
+on:
+  workflow_dispatch:
+  push:
+    branches: [feat/tauri-desktop]
+    paths: ['desktop/**', '.github/workflows/desktop-windows.yml', 'transports/**', 'core/**', 'framework/**', 'plugins/**', 'ui/**']
+  pull_request:
+    paths: ['desktop/**', '.github/workflows/desktop-windows.yml']
+permissions:
+  contents: read
+concurrency:
+  group: desktop-windows-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  portable:
+    runs-on: windows-2022
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: transports/go.mod
+          cache-dependency-path: '**/go.sum'
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+      - name: Rust MSVC stable
+        run: |
+          rustup update stable --no-self-update
+          rustup default stable
+      - uses: msys2/setup-msys2@v2
+        id: msys2
+        with:
+          msystem: MINGW64
+          install: mingw-w64-x86_64-gcc
+          update: true
+      - name: Configure CGO
+        run: |
+          $compiler = '${{ steps.msys2.outputs.msys2-location }}/mingw64/bin'
+          $compiler >> $env:GITHUB_PATH
+          "CC=$compiler/gcc.exe" >> $env:GITHUB_ENV
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/src-tauri
+      - name: Build UI, gateway, Tauri and portable ZIP
+        run: ./desktop/scripts/build.ps1 release
+      - name: Desktop unit and real gateway smoke tests
+        run: ./desktop/scripts/build.ps1 test
+      - name: Verify ordinary gateway still builds
+        run: go build -o desktop/dist/bifrost-server-check.exe ./transports/bifrost-http
+        env:
+          CGO_ENABLED: '1'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bif-app-windows-x64-portable
+          path: |
+            desktop/dist/bif-app-windows-x64-portable.zip
+            desktop/dist/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 30

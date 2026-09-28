@@ -1,0 +1,6 @@
+.tools/
+dist/
+src-tauri/target/
+src-tauri/gen/
+src-tauri/binaries/
+test-results/
