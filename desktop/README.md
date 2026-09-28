@@ -124,6 +124,24 @@ this fork. **Desktop Windows** remains the desktop build/validation workflow.
 The upstream CodSpeed job is restricted to `maximhq/bifrost` because its managed
 runner is unavailable to this fork. Other upstream checks are retained.
 
+The fork also disables these inherited workflows in repository Actions settings
+after inspecting their failed runs (2026-09-28):
+
+- **Snyk checks** fails in `step-security/setup-uv` with an invalid-subscription
+  error, before scanning. Its external service prerequisites are not configured
+  for bif-app; this is not a successful security scan or a vulnerability finding.
+- **Scorecard supply-chain security** fails pulling the external
+  `gcr.io/openssf/scorecard-action:v2.4.0` image with a billing-required error.
+  No Scorecard assessment completes.
+- **PR Test Notifier** runs on `push` but expects a pull-request number, so its
+  comment command fails. It is unrelated to desktop validation.
+
+These workflow files are retained to minimize upstream differences. Do not
+re-enable them just when syncing upstream; first repair/verify their prerequisites
+and suitability for this fork. Desktop builds and tests, workflow lint and
+dependency review remain enabled. GitHub Actions repository settings are separate
+from versioned workflow files, so a fresh fork must apply this policy explicitly.
+
 The root [`AGENTS.md`](../AGENTS.md) makes these rules mandatory for future agents:
 
 1. Keep every necessary upstream source change minimal and in its own commit,

@@ -17,6 +17,10 @@ Upstream Bifrost is tracked independently as `upstream/dev`. Synchronize by
 switching to `main`, fetching `upstream`, and merging `upstream/dev`; there is
 no `origin/dev` mirror to update or recreate. Create future `feat/*` and `fix/*`
 branches from `main` and target `main` when merging them back.
+Follow the fork-specific Actions policy in `desktop/README.md`. Preserve desktop
+build/test checks; do not re-enable inherited publishers or disabled external
+service workflows merely because upstream was merged. Verify their prerequisites
+and intended use in this fork before changing their enabled state.
 
 All agents working on this fork MUST follow these three rules:
 
