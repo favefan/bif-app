@@ -112,12 +112,25 @@ See [VALIDATION.md](VALIDATION.md) for the exact checks and native tray test.
 
 ## Upstream maintenance
 
+The root [`AGENTS.md`](../AGENTS.md) makes these rules mandatory for future agents:
+
+1. Keep every necessary upstream source change minimal and in its own commit,
+   explaining the reason, preservation of ordinary server behavior, and tests.
+2. Merge upstream through Git, resolve source conflicts, then validate the
+   desktop release, desktop tests/smoke checks and ordinary server build. Do not
+   add a build-time patch application layer.
+3. When upstream provides an equivalent integration capability, use it and
+   remove the redundant fork modification after checking equivalent behavior.
+
+Published commits and release tags are not rewritten just to reorganize history.
+
 ```powershell
 git remote add upstream https://github.com/maximhq/bifrost.git
 git fetch upstream
 git merge upstream/dev
 ./desktop/scripts/build.ps1 release
 ./desktop/scripts/build.ps1 test
+go build -o desktop/dist/bifrost-server-check.exe ./transports/bifrost-http
 ```
 
 Add the remote only when it does not already exist. Keep desktop changes in

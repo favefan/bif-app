@@ -2,6 +2,41 @@
 
 > Context for AI agents (Claude Code, Copilot, Cursor, etc.) working on this codebase. Read this fully before making changes.
 
+## bif-app fork maintenance — mandatory for agents
+
+<!-- Added by bif-app: fork-specific maintenance policy; preserve when merging upstream. -->
+
+Maintain bif-app as a thin desktop wrapper around the original Bifrost UI and
+HTTP gateway. Keep desktop implementation in `desktop/` and dedicated build/CI
+integration. Maintain necessary upstream changes directly as Git commits in this
+fork; do not introduce a build-time `.patch` application layer or duplicate the
+upstream source, UI, API, or business configuration.
+
+All agents working on this fork MUST follow these three rules:
+
+1. **Isolate each necessary upstream source change in a small, separate commit.**
+   First check whether the requirement can be implemented in the desktop layer.
+   If upstream code must change, keep the diff minimal and separate it from
+   unrelated desktop work. Explain in the commit why the change is necessary,
+   how ordinary server behavior is preserved, and what validation was performed.
+   Preserve license/attribution and mark modified upstream code appropriately.
+2. **Synchronize upstream with Git, then validate both desktop and server modes.**
+   Fetch and merge the upstream branch, resolve conflicts in the actual source,
+   and preserve this fork policy. Do not move conflict resolution into a patch
+   application script. After an upstream merge, run the desktop release build,
+   desktop tests/smoke checks, and ordinary `bifrost-http` build; run additional
+   relevant checks for affected behavior. Report failures or untested coverage
+   accurately. See `desktop/README.md` for the build and maintenance commands.
+3. **Remove a fork-specific upstream change when upstream provides its equivalent.**
+   During synchronization, check whether upstream now supplies the required
+   lifecycle or integration capability. If it does, adapt the desktop layer to
+   that API, remove the redundant fork code, and validate equivalent behavior.
+   Do not keep parallel implementations or obsolete compatibility patches.
+
+Apply these rules to future work without rewriting published commits or release
+tags merely to reorganize existing history. These rules do not authorize new
+product features or bypass the user's portable-before-installer acceptance gate.
+
 ## What is Bifrost?
 
 Bifrost is a high-performance AI gateway that unifies 20+ LLM providers behind a single OpenAI-compatible API with ~11µs overhead at 5,000 RPS. It also serves as an MCP (Model Context Protocol) gateway, turning static chat models into tool-calling agents.
