@@ -78,10 +78,10 @@ python desktop/scripts/tray-smoke.py --pid 1234 --child-pid 5678 --port 8080
 
 ## Repeatable automated checks
 
-`desktop/scripts/build.ps1 test` runs eight desktop tests covering paths, command
+`desktop/scripts/build.ps1 test` runs fourteen desktop tests covering paths, command
 construction, port conflicts and persistence, HTTP readiness and failure cases,
 key creation/reuse/failure handling, and actual Windows Credential Manager
-round trips. An additional real-sidecar integration test verifies:
+round trips. Two additional real-sidecar integration tests verify:
 
 - HTTP health, embedded original UI/assets and management endpoints;
 - `/v1/models` and an OpenAI-compatible `/v1/chat/completions` request through
@@ -96,6 +96,14 @@ tests the gateway, extracts the final portable ZIP and launches its actual host.
 listener, single-instance behavior, crash reaping and restart. It deliberately
 requires an empty disposable CI profile. The workflow also builds the ordinary
 gateway entry point to catch server-mode regressions.
+
+For alpha.4, `scripts/oss-ui-smoke.mjs` also builds and tests both ordinary and
+desktop production UI bundles against a disposable gateway (five browser cases
+per mode). It verifies the complete audited navigation list, search/keyboard
+navigation, connector selectors, API Keys auth guidance, direct placeholder
+routes, feature-flag rows, and real temporary prompt creation/editing/deletion.
+Ordinary builds retain Enterprise placeholder entries; desktop builds hide them.
+See [OSS_UI_PLAN.md](OSS_UI_PLAN.md) for the exact presentation-only scope.
 
 GitHub-hosted CI does not automate interactive tray menus; the Windows 10 desktop
 checks above supply that coverage. A physical Windows 11 session, real paid LLM
