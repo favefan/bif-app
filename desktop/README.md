@@ -117,6 +117,13 @@ See [VALIDATION.md](VALIDATION.md) for the exact checks and native tray test.
 The fork does not maintain a separate `origin/dev` mirror. Start feature/fix
 branches from `main` and merge them back into `main`.
 
+The fork's GitHub Actions settings disable the inherited **Release Pipeline**,
+**Release CLI** and **Release Migration CLI** workflows: their `main` triggers
+publish upstream products, not bif-app. Keep these disabled when maintaining
+this fork. **Desktop Windows** remains the desktop build/validation workflow.
+The upstream CodSpeed job is restricted to `maximhq/bifrost` because its managed
+runner is unavailable to this fork. Other upstream checks are retained.
+
 The root [`AGENTS.md`](../AGENTS.md) makes these rules mandatory for future agents:
 
 1. Keep every necessary upstream source change minimal and in its own commit,
