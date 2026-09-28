@@ -51,6 +51,8 @@ jobs:
         run: ./desktop/scripts/build.ps1 release
       - name: Desktop unit and real gateway smoke tests
         run: ./desktop/scripts/build.ps1 test
+      - name: Launch extracted portable desktop and verify ownership
+        run: ./desktop/scripts/host-smoke.ps1
       - name: Verify ordinary gateway still builds
         run: go build -o desktop/dist/bifrost-server-check.exe ./transports/bifrost-http
         env:

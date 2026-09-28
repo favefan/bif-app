@@ -108,6 +108,7 @@ Credential Manager), then real-sidecar smoke tests. No paid API is called.
 Windows CI performs builds and validation before uploading an artifact.
 GUI checks and any platform coverage limitations are recorded in the release
 notes; a successful backend smoke test alone does not prove tray usability.
+See [VALIDATION.md](VALIDATION.md) for the exact checks and native tray test.
 
 ## Upstream maintenance
 

@@ -200,6 +200,9 @@ impl Gateway {
         let deadline = Instant::now() + timeout;
         loop {
             if self.child.try_wait().map_err(|e| e.to_string())?.is_some() {
+                // Reap any remaining MCP descendants before joining pipe readers;
+                // descendants can otherwise keep inherited stdout handles open.
+                drop(self._job.take());
                 for reader in self.readers.drain(..) {
                     let _ = reader.join();
                 }
@@ -208,6 +211,10 @@ impl Gateway {
             if Instant::now() >= deadline {
                 self.child.kill().map_err(|e| e.to_string())?;
                 let _ = self.child.wait();
+                drop(self._job.take());
+                for reader in self.readers.drain(..) {
+                    let _ = reader.join();
+                }
                 return Ok(false);
             }
             thread::sleep(Duration::from_millis(100));
@@ -237,6 +244,72 @@ fn log_pipe(
 mod smoke {
     use super::*;
     use crate::platform::{encryption_key, WindowsCredentials};
+    use std::{
+        io::Read,
+        sync::atomic::{AtomicBool, Ordering},
+    };
+
+    struct LocalProvider {
+        port: u16,
+        stop: Arc<AtomicBool>,
+        worker: Option<thread::JoinHandle<()>>,
+    }
+    impl LocalProvider {
+        fn start() -> Self {
+            let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+            let port = listener.local_addr().unwrap().port();
+            listener.set_nonblocking(true).unwrap();
+            let stop = Arc::new(AtomicBool::new(false));
+            let stopping = stop.clone();
+            let worker = thread::spawn(move || {
+                while !stopping.load(Ordering::SeqCst) {
+                    let Ok((mut socket, _)) = listener.accept() else {
+                        thread::sleep(Duration::from_millis(10));
+                        continue;
+                    };
+                    socket
+                        .set_read_timeout(Some(Duration::from_secs(2)))
+                        .unwrap();
+                    let mut reader = BufReader::new(socket.try_clone().unwrap());
+                    let mut first = String::new();
+                    if reader.read_line(&mut first).is_err() {
+                        continue;
+                    }
+                    let mut length = 0;
+                    loop {
+                        let mut line = String::new();
+                        if reader.read_line(&mut line).unwrap_or(0) == 0 || line == "\r\n" {
+                            break;
+                        }
+                        if let Some(v) = line.to_ascii_lowercase().strip_prefix("content-length:") {
+                            length = v.trim().parse::<usize>().unwrap();
+                        }
+                    }
+                    let mut body = vec![0; length];
+                    let _ = reader.read_exact(&mut body);
+                    let response = if first.contains("chat/completions") {
+                        r#"{"id":"chatcmpl-local","object":"chat.completion","created":1,"model":"desktop-smoke","choices":[{"index":0,"message":{"role":"assistant","content":"local smoke response"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":3,"total_tokens":4}}"#
+                    } else {
+                        r#"{"object":"list","data":[{"id":"desktop-smoke","object":"model","created":1,"owned_by":"local"}]}"#
+                    };
+                    let _ = write!(socket, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{response}", response.len());
+                }
+            });
+            Self {
+                port,
+                stop,
+                worker: Some(worker),
+            }
+        }
+    }
+    impl Drop for LocalProvider {
+        fn drop(&mut self) {
+            self.stop.store(true, Ordering::SeqCst);
+            if let Some(w) = self.worker.take() {
+                let _ = w.join();
+            }
+        }
+    }
 
     #[test]
     #[ignore = "requires the freshly built BIF_APP_TEST_SIDECAR"]
@@ -270,15 +343,39 @@ mod smoke {
             let r = client.get(format!("{base}{path}")).send().unwrap();
             assert_eq!(r.status(), 200, "{path}: {}", r.text().unwrap());
         }
-        // Persist a local-only provider using the existing management API. It
-        // points at an unused loopback port; no real provider is contacted.
+        // Exercise the unmodified OpenAI-compatible API against a loopback
+        // fixture, without credentials or requests to a paid service.
+        let fixture = LocalProvider::start();
         let r = client.post(format!("{base}/api/providers")).json(&serde_json::json!({
-            "provider": "ollama", "network_config": { "base_url": "http://127.0.0.1:1", "default_request_timeout_in_seconds": 1 }
+            "provider": "ollama", "network_config": { "base_url": format!("http://127.0.0.1:{}", fixture.port), "default_request_timeout_in_seconds": 2 }
         })).send().unwrap();
         assert!(
             r.status().is_success(),
             "create provider: {}",
             r.text().unwrap()
+        );
+        let r = client.post(format!("{base}/api/providers/ollama/keys")).json(&serde_json::json!({
+            "name": "desktop-smoke", "value": "desktop-smoke-not-a-real-provider-key", "models": ["desktop-smoke"], "weight": 1,
+            "ollama_key_config": { "url": format!("http://127.0.0.1:{}", fixture.port) }
+        })).send().unwrap();
+        assert!(
+            r.status().is_success(),
+            "create fixture key: {}",
+            r.text().unwrap()
+        );
+        let r = client.post(format!("{base}/v1/chat/completions")).json(&serde_json::json!({
+            "model": "ollama/desktop-smoke", "messages": [{"role":"user","content":"local smoke"}]
+        })).send().unwrap();
+        assert_eq!(
+            r.status(),
+            200,
+            "OpenAI-compatible chat: {}",
+            r.text().unwrap()
+        );
+        let response: serde_json::Value = r.json().unwrap();
+        assert_eq!(
+            response["choices"][0]["message"]["content"],
+            "local smoke response"
         );
         save_state(&paths.desktop, port).unwrap();
         assert!(

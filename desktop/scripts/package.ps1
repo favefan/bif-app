@@ -8,6 +8,11 @@ $hostCommit = (Get-Content "$desktop/src-tauri/target/release/COMMIT.txt" -Raw).
 if ($currentCommit -ne $gatewayCommit -or $hostCommit -ne $gatewayCommit) { throw 'Host, gateway and checkout must share one commit. Run build.ps1 release.' }
 $name = if ($IncludeWebView2) { 'bif-app-windows-x64-portable-with-webview2' } else { 'bif-app-windows-x64-portable' }
 $stage = Join-Path $desktop "dist/$name"
+if (Test-Path $stage) {
+    $expectedStage = [IO.Path]::GetFullPath((Join-Path $desktop "dist/$name"))
+    if ((Resolve-Path $stage).Path -ne $expectedStage) { throw 'Unexpected package staging path' }
+    Remove-Item -LiteralPath $stage -Recurse -Force
+}
 New-Item -ItemType Directory -Force $stage | Out-Null
 Copy-Item "$desktop/src-tauri/target/release/bif-app.exe", "$desktop/src-tauri/binaries/bifrost-http.exe", "$desktop/src-tauri/binaries/COMMIT.txt", "$repo/LICENSE", "$repo/THIRD_PARTY_NOTICES.md" -Destination $stage -Force
 Copy-Item "$desktop/README.md" "$stage/README.md" -Force
