@@ -16,6 +16,7 @@ if (Test-Path $stage) {
 New-Item -ItemType Directory -Force $stage | Out-Null
 Copy-Item "$desktop/src-tauri/target/release/bif-app.exe", "$desktop/src-tauri/binaries/bifrost-http.exe", "$desktop/src-tauri/binaries/COMMIT.txt", "$repo/LICENSE", "$repo/THIRD_PARTY_NOTICES.md" -Destination $stage -Force
 Copy-Item "$desktop/README.md" "$stage/README.md" -Force
+Copy-Item "$desktop/VALIDATION.md" "$stage/VALIDATION.md" -Force
 Copy-Item "$desktop/THIRD_PARTY_NOTICES.md" "$stage/DESKTOP_THIRD_PARTY_NOTICES.md" -Force
 node "$PSScriptRoot/licenses.mjs" $stage
 if ($LASTEXITCODE -ne 0) { throw 'Dependency license collection failed' }
