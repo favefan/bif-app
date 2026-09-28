@@ -1,0 +1,101 @@
+name: Publish Desktop Prerelease
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: Successful Desktop Windows run on main to publish
+        required: true
+        type: string
+permissions:
+  actions: read
+  contents: write
+concurrency:
+  group: desktop-prerelease-publish
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: windows-2022
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      SOURCE_RUN_ID: ${{ inputs.run_id }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify source, package and prerelease version
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:SOURCE_RUN_ID -notmatch '^\d+$') { throw 'Expected numeric run ID' }
+          $run = gh api "repos/$env:GH_REPO/actions/runs/$env:SOURCE_RUN_ID" | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot read source run' }
+          if ($run.status -ne 'completed' -or $run.conclusion -ne 'success' -or
+              $run.path -ne '.github/workflows/desktop-windows.yml' -or
+              $run.head_branch -ne 'main' -or $run.head_repository.full_name -ne $env:GH_REPO -or
+              $run.head_sha -notmatch '^[a-f0-9]{40}$') { throw 'Source must be a successful Desktop Windows main run in this fork' }
+          $source = $run.head_sha
+          $config = git show "${source}:desktop/src-tauri/tauri.conf.json" | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot read source version' }
+          $version = $config.version
+          if ($version -notmatch '^\d+\.\d+\.\d+-(alpha|beta|rc)\.\d+$') { throw 'This workflow only publishes prereleases' }
+          $tag = "v$version"
+          $notes = ".github/release-notes/$tag.md"
+          if (-not (Test-Path -LiteralPath $notes)) { throw "Missing reviewed release notes: $notes" }
+          gh run download $env:SOURCE_RUN_ID --name bif-app-windows-x64-portable --dir release-assets
+          if ($LASTEXITCODE -ne 0) { throw 'Artifact download failed' }
+          $zip = (Resolve-Path release-assets/bif-app-windows-x64-portable.zip).Path
+          $hash = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          $sum = (Get-Content release-assets/SHA256SUMS.txt -Raw).Trim()
+          if ($sum -ne "$hash  bif-app-windows-x64-portable.zip") { throw 'SHA256 mismatch' }
+          Expand-Archive -LiteralPath $zip -DestinationPath verified-package
+          foreach ($file in @('bif-app.exe','bifrost-http.exe','COMMIT.txt','LICENSE','THIRD_PARTY_NOTICES.md','OSS_UI_PLAN.md')) {
+            if (-not (Test-Path -LiteralPath "verified-package/$file")) { throw "Missing package file: $file" }
+          }
+          if ((Get-Content verified-package/COMMIT.txt -Raw).Trim() -ne $source) { throw 'Package/source commit mismatch' }
+          if (Test-Path verified-package/WebView2) { throw 'Expected system-WebView2 portable package' }
+          $exeVersion = (Get-Item verified-package/bif-app.exe).VersionInfo.ProductVersion
+          if ($exeVersion -ne $version) { throw "EXE version mismatch: $exeVersion versus $version" }
+          "RELEASE_SOURCE=$source" >> $env:GITHUB_ENV
+          "RELEASE_TAG=$tag" >> $env:GITHUB_ENV
+          "RELEASE_HASH=$hash" >> $env:GITHUB_ENV
+          "Verified $tag, source $source, SHA256 $hash"
+      - name: Tag and publish verified portable assets
+        run: |
+          $ErrorActionPreference = 'Stop'
+          git config user.name Khun
+          git config user.email khun.mail@qq.com
+          git show-ref --verify --quiet "refs/tags/$env:RELEASE_TAG"
+          if ($LASTEXITCODE -eq 0) {
+            $existing = git rev-parse "$env:RELEASE_TAG^{}"
+            if ($existing.Trim() -ne $env:RELEASE_SOURCE) { throw 'Existing tag targets another commit; never overwrite it' }
+          } else {
+            git tag -a $env:RELEASE_TAG $env:RELEASE_SOURCE -m "bif-app $env:RELEASE_TAG — Windows x64 portable, system WebView2"
+            if ($LASTEXITCODE -ne 0) { throw 'Tag creation failed' }
+            git push origin "refs/tags/$env:RELEASE_TAG"
+            if ($LASTEXITCODE -ne 0) { throw 'Tag push failed' }
+          }
+          $notes = ".github/release-notes/$env:RELEASE_TAG.md"
+          $title = (Get-Content -LiteralPath $notes -TotalCount 1) -replace '^#\s+', ''
+          $existingRelease = gh release view $env:RELEASE_TAG --json isDraft 2>$null | ConvertFrom-Json
+          if ($LASTEXITCODE -eq 0) {
+            if (-not $existingRelease.isDraft) { throw 'Release is already published; do not overwrite it' }
+            gh release upload $env:RELEASE_TAG release-assets/bif-app-windows-x64-portable.zip release-assets/SHA256SUMS.txt --clobber
+            if ($LASTEXITCODE -ne 0) { throw 'Draft asset upload failed' }
+            gh release edit $env:RELEASE_TAG --title $title --notes-file $notes --prerelease --latest=false
+          } else {
+            gh release create $env:RELEASE_TAG release-assets/bif-app-windows-x64-portable.zip release-assets/SHA256SUMS.txt --verify-tag --draft --prerelease --latest=false --title $title --notes-file $notes
+          }
+          if ($LASTEXITCODE -ne 0) { throw 'Draft upload/update failed; inspect before retrying' }
+          $releaseUrl = gh release view $env:RELEASE_TAG --json apiUrl --jq .apiUrl
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot locate draft release' }
+          $release = gh api $releaseUrl | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot verify draft release' }
+          $asset = $release.assets | Where-Object name -eq 'bif-app-windows-x64-portable.zip'
+          if ($release.assets.Count -ne 2 -or $asset.digest -ne "sha256:$env:RELEASE_HASH") { throw 'Uploaded release assets failed verification' }
+          gh release edit $env:RELEASE_TAG --draft=false --prerelease --latest=false
+          if ($LASTEXITCODE -ne 0) { throw 'Release publication failed' }
+          "Published $env:RELEASE_TAG with SHA256 $env:RELEASE_HASH"
